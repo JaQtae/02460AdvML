@@ -1,0 +1,4 @@
+# Ignoring large files and data
+DeepLatentVarModels/Week1/data/*
+DeepLatentVarModels/Week1/model.pt
+DeepLatentVarModels/Week1/samples.png

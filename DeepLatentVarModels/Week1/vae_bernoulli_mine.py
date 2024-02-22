@@ -1,5 +1,5 @@
 # Code for DTU course 02460 (Advanced Machine Learning Spring) by Jes Frellsen, 2024
-# Version 1.2 (2024-02-06)
+# Version 1.1 (2024-01-29)
 # Inspiration is taken from:
 # - https://github.com/jmtomczak/intro_dgm/blob/main/vaes/vae_example.ipynb
 # - https://github.com/kampta/pytorch-distributions/blob/master/gaussian_vae.py
@@ -10,6 +10,8 @@ import torch.distributions as td
 import torch.utils.data
 from torch.nn import functional as F
 from tqdm import tqdm
+from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
 
 
 class GaussianPrior(nn.Module):
@@ -89,6 +91,7 @@ class BernoulliDecoder(nn.Module):
         return td.Independent(td.Bernoulli(logits=logits), 2)
 
 
+
 class VAE(nn.Module):
     """
     Define a Variational Autoencoder (VAE) model.
@@ -122,6 +125,7 @@ class VAE(nn.Module):
         q = self.encoder(x)
         z = q.rsample()
         elbo = torch.mean(self.decoder(z).log_prob(x) - td.kl_divergence(q, self.prior()), dim=0)
+        #print(f"self.decoder(z).log_prob(x): {self.decoder(z).log_prob(x).shape}\n td.kl_divergence(q, self.prior()): {td.kl_divergence(q, self.prior()).shape}")
         return elbo
 
     def sample(self, n_samples=1):
@@ -163,22 +167,95 @@ def train(model, optimizer, data_loader, epochs, device):
         The device to use for training.
     """
     model.train()
+    num_steps = len(data_loader)*epochs
+    epoch = 0
 
-    total_steps = len(data_loader)*epochs
-    progress_bar = tqdm(range(total_steps), desc="Training")
-
-    for epoch in range(epochs):
-        data_iter = iter(data_loader)
-        for x in data_iter:
-            x = x[0].to(device)
+    with tqdm(range(num_steps)) as pbar:
+        for step in pbar:
+            x = next(iter(data_loader))[0]
+            x = x.to(device)
             optimizer.zero_grad()
             loss = model(x)
             loss.backward()
             optimizer.step()
 
-            # Update progress bar
-            progress_bar.set_postfix(loss=loss.item(), epoch=f"{epoch+1}/{epochs}")
-            progress_bar.update()
+            # Report
+            if step % 5 ==0 :
+                loss = loss.detach().cpu()
+                pbar.set_description(f"epoch={epoch}, step={step}, loss={loss:.1f}")
+
+            if (step+1) % len(data_loader) == 0:
+                epoch += 1
+
+
+
+#### Added methods for exercises or ease-of-use :)                
+def evaluate(model, dataset):
+    test_loss = 0.0
+    for x, y in dataset:
+        test_loss += model(x).item()
+        
+    test_loss /= len(dataset)
+        
+    return test_loss
+
+def sample_projection(model, data_loader, device):
+    # Courtesey of Daniel the Man
+    """
+    Sample from the latent space of a VAE model.
+
+    Parameters:
+    model: [VAE]
+       The VAE model to sample from.
+    data_loader: [torch.utils.data.DataLoader]
+            The data loader to use for sampling.
+    device: [torch.device]
+        The device to use for sampling.
+    """
+    model.eval()
+    samples = torch.empty((0,10)).to(device)
+    targets = torch.empty((0)).to(device)
+    with torch.no_grad():
+        for x, target in data_loader:
+            x = x.to(device)
+            target = target.to(device)
+            q = model.encoder(x)
+            z = q.sample()
+            samples = torch.cat((samples, z), dim=0)
+            targets = torch.cat((targets, target), dim=0)
+
+
+    pca = PCA(n_components = 2)
+    pca.fit(samples.cpu().numpy())
+    samples = pca.transform(samples.cpu().numpy())
+    plt.scatter(samples[:,0], samples[:,1], c=targets.cpu().numpy(), cmap='tab10')
+    plt.colorbar()
+    plt.show()
+    
+class MoGPrior(nn.Module):
+    def __init__(self, M, num_components):
+        """
+        Define a Mixture of Gaussian (MoG) prior distribution.
+
+                Parameters:
+        M: [int] 
+           Dimension of the latent space.
+        num_components: [int]
+                        Number of Gaussian components in the mixture.
+        """
+        super(MoGPrior, self).__init__()
+        self.M = M
+        self.num_components = num_components
+        self.mean = nn.Parameter(torch.zeros(M, num_components), requires_grad=False)
+        self.logvars = nn.Parameter(torch.zeros(M, num_components), requires_grad=False)
+        self.mixing_logits = nn.Parameter(torch.zeros(num_components, M), requires_grad=False)
+
+    def forward(self):
+        # https://github.com/pytorch/pytorch/blob/main/torch/distributions/mixture_same_family.py
+        mixture_dist = td.Categorical(logits=self.mixing_logits)
+        comp_dist = td.Independent(td.Normal(loc=self.mean, scale=torch.exp(self.logvars)), 1)
+        #pdb.set_trace()
+        return td.MixtureSameFamily(mixture_dist, comp_dist)
 
 
 if __name__ == "__main__":
@@ -189,7 +266,7 @@ if __name__ == "__main__":
     # Parse arguments
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('mode', type=str, default='train', choices=['train', 'sample'], help='what to do when running the script (default: %(default)s)')
+    parser.add_argument('mode', type=str, default='train', choices=['train', 'sample', 'eval'], help='what to do when running the script (default: %(default)s)')
     parser.add_argument('--model', type=str, default='model.pt', help='file to save model to or load model from (default: %(default)s)')
     parser.add_argument('--samples', type=str, default='samples.png', help='file to save samples in (default: %(default)s)')
     parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda', 'mps'], help='torch device (default: %(default)s)')
@@ -211,7 +288,7 @@ if __name__ == "__main__":
                                                     batch_size=args.batch_size, shuffle=True)
     mnist_test_loader = torch.utils.data.DataLoader(datasets.MNIST('data/', train=False, download=True,
                                                                 transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: (thresshold < x).float().squeeze())])),
-                                                    batch_size=args.batch_size, shuffle=True)
+                                                    batch_size=args.batch_size, shuffle=False)
 
     # Define prior distribution
     M = args.latent_dim
@@ -260,3 +337,19 @@ if __name__ == "__main__":
         with torch.no_grad():
             samples = (model.sample(64)).cpu() 
             save_image(samples.view(64, 1, 28, 28), args.samples)
+    
+    elif args.mode == 'eval':
+        model.load_state_dict(torch.load(args.model, map_location=torch.device(args.device)))
+        
+        sample_projection(model=model,
+                          data_loader=mnist_test_loader,
+                          device=device)
+
+## Train
+# python vae_bernoulli_mine.py train --device cuda --latent-dim 10 --epochs 5 --batch-size 128 --model model.pt
+
+## Sample
+# python vae_bernoulli_mine.py sample --device cuda --latent-dim 10 --epochs 5 --batch-size 128 --model model.pt --samples samples.png
+
+## Plot PCA
+# python vae_bernoulli_mine.py eval --device cuda --latent-dim 10 --epochs 5 --batch-size 128 --model model.pt

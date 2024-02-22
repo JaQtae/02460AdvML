@@ -11,4 +11,7 @@ pip install -r requirements.txt
 All weeks contain the original, unaltered code handed out alongside the proposed solutions from the exercises, some not completely done.
 
 ### TODO:
-- [] Add the theoretical exercise solutions
+- [ ] Add the theoretical exercise solutions.
+- [ ] More descriptive names included.
+- [ ] Annotate code with inputs to run correctly, and to clarify where I have written code for the exercises.
+

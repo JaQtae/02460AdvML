@@ -20,10 +20,13 @@ from torchvision import (
     transforms,
 )
 from torchvision.utils import (
-    data,
     save_image, 
     make_grid,
 )
+from torch.utils.data import (
+    DataLoader,
+)
+
 import torch
 import torch.nn as nn
 import torch.distributions as td

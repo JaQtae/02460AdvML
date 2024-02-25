@@ -109,7 +109,12 @@ class GaussianEncoder(nn.Module):
         x: [torch.Tensor] 
            A tensor of dimension `(batch_size, feature_dim1, feature_dim2)`
         """
+        #print(f"mean: {mean.shape}")
         mean, std = torch.chunk(self.encoder_net(x), 2, dim=-1)
+        print(f"enc mean: {mean.shape}")
+        print(f"enc std: {std.shape}")
+        out = td.Independent(td.Normal(loc=mean, scale=torch.exp(std)), 1)
+        print(f"enc: {out}")
         return td.Independent(td.Normal(loc=mean, scale=torch.exp(std)), 1)
 
 
@@ -169,14 +174,18 @@ class VAE(nn.Module):
         x: [torch.Tensor] 
            A tensor of dimension `(batch_size, feature_dim1, feature_dim2, ...)`
         """
+        print(f"x looks like: {x.shape}")
         q = self.encoder(x)
         z = q.rsample()
+        print(f"z looks like: {z.shape}")
         print(f"Type of prior: {type(self.prior)}")
         
         if type(self.prior) == "GaussianPrior":
             elbo = torch.mean(self.decoder(z).log_prob(x) - td.kl_divergence(q, self.prior()), dim=0)
         else:
             # non-Gaussian prior
+            print(q.log_prob(z).shape)
+            print(self.prior().shape)
             regularization_term = q.log_prob(z) - self.prior()
             elbo = torch.mean(self.decoder(z).log_prob(x) - regularization_term, dim=0)
                

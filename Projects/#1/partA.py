@@ -116,7 +116,9 @@ if __name__ == "__main__":
         base = GaussianBase(D)
 
         # Define transformations
-        transformations =[]        
+        transformations =[]
+        mask = torch.Tensor([1 if (i+j) % 2 == 0 else 0 for i in range(28) for j in range(28)])
+        
         num_transformations = 5
         num_hidden = 8
 

@@ -1,7 +1,10 @@
-# Ignoring large files and data
-DeepLatentVarModels/Week1/data/*
-DeepLatentVarModels/Week1/model.pt
-DeepLatentVarModels/Week1/samples.png
+# Ignore data, outputs and model files in any week directory for DLVM
+DeepLatentVarModels/*/data/*
+DeepLatentVarModels/*/model.pt
+DeepLatentVarModels/*/samples.png
+DeepLatentVarModels/*/flowprior.pt
+
+
 
 .vscode/
 # Byte-compiled / optimized / DLL files

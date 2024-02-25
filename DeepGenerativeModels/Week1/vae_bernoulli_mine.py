@@ -36,7 +36,30 @@ class GaussianPrior(nn.Module):
         prior: [torch.distributions.Distribution]
         """
         return td.Independent(td.Normal(loc=self.mean, scale=self.std), 1)
+    
+class MoGPrior(nn.Module):
 
+    def __init__(self, M, num_components, device = 'cpu'):
+        """
+        Define a Mixture of Gaussian (MoG) prior distribution.
+
+                Parameters:
+        M: [int] 
+           Dimension of the latent space.
+        num_components: [int]
+                        Number of Gaussian components in the mixture.
+        """
+        super(MoGPrior, self).__init__()
+        self.M = M
+        self.num_components = num_components
+        self.mean = nn.Parameter(torch.zeros(num_components, M), requires_grad=False).to(device)
+        self.logvars = nn.Parameter(torch.zeros(num_components, M), requires_grad=False).to(device)
+
+    def forward(self):
+        # https://github.com/pytorch/pytorch/blob/main/torch/distributions/mixture_same_family.py
+        mixture_dist = td.Categorical(torch.ones(self.num_components,).to(device))
+        comp_dist = td.Independent(td.Normal(loc=self.mean, scale=torch.exp(self.logvars)), 1)
+        return td.MixtureSameFamily(mixture_dist, comp_dist)
 
 class GaussianEncoder(nn.Module):
     def __init__(self, encoder_net):
@@ -119,13 +142,14 @@ class VAE(nn.Module):
         Parameters:
         x: [torch.Tensor] 
            A tensor of dimension `(batch_size, feature_dim1, feature_dim2, ...)`
-           n_samples: [int]
-           Number of samples to use for the Monte Carlo estimate of the ELBO.
         """
         q = self.encoder(x)
         z = q.rsample()
-        elbo = torch.mean(self.decoder(z).log_prob(x) - td.kl_divergence(q, self.prior()), dim=0)
-        #print(f"self.decoder(z).log_prob(x): {self.decoder(z).log_prob(x).shape}\n td.kl_divergence(q, self.prior()): {td.kl_divergence(q, self.prior()).shape}")
+        if type(self.prior) == "GaussianPrior":
+            elbo = torch.mean(self.decoder(z).log_prob(x) - td.kl_divergence(q, self.prior()), dim=0)
+        else:
+            regularization_term = q.log_prob(z) - self.prior().log_prob(z)
+            elbo = torch.mean(self.decoder(z).log_prob(x) - regularization_term, dim=0)
         return elbo
 
     def sample(self, n_samples=1):

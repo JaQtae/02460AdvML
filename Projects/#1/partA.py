@@ -83,8 +83,7 @@ if __name__ == "__main__":
     if args.prior == 'sg':
         prior = GaussianPrior(M)
     elif args.prior == 'mog':
-        # TODO: Add MoG
-        raise NotImplementedError
+        prior = MoGPrior(M, args.batch_size, device)
     elif args.prior == 'flow':
         # TODO: Add Flow prior (Is this from a pre-trained Flow model?)
         raise NotImplementedError

@@ -253,32 +253,6 @@ def sample_projection(model, data_loader, device):
     plt.scatter(samples[:,0], samples[:,1], c=targets.cpu().numpy(), cmap='tab10')
     plt.colorbar()
     plt.show()
-    
-class MoGPrior(nn.Module):
-    def __init__(self, M, num_components):
-        """
-        Define a Mixture of Gaussian (MoG) prior distribution.
-
-                Parameters:
-        M: [int] 
-           Dimension of the latent space.
-        num_components: [int]
-                        Number of Gaussian components in the mixture.
-        """
-        super(MoGPrior, self).__init__()
-        self.M = M
-        self.num_components = num_components
-        self.mean = nn.Parameter(torch.zeros(M, num_components), requires_grad=False)
-        self.logvars = nn.Parameter(torch.zeros(M, num_components), requires_grad=False)
-        self.mixing_logits = nn.Parameter(torch.zeros(num_components, M), requires_grad=False)
-
-    def forward(self):
-        # https://github.com/pytorch/pytorch/blob/main/torch/distributions/mixture_same_family.py
-        mixture_dist = td.Categorical(logits=self.mixing_logits)
-        comp_dist = td.Independent(td.Normal(loc=self.mean, scale=torch.exp(self.logvars)), 1)
-        #pdb.set_trace()
-        return td.MixtureSameFamily(mixture_dist, comp_dist)
-
 
 if __name__ == "__main__":
     from torchvision import datasets, transforms

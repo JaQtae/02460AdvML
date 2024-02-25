@@ -46,8 +46,6 @@ class MoGPrior(nn.Module):
                 Parameters:
         M: [int] 
            Dimension of the latent space.
-        num_components: [int]
-                        Number of Gaussian components in the mixture.
         """
         super(MoGPrior, self).__init__()
         self.M = M

@@ -86,7 +86,7 @@ if __name__ == "__main__":
     if args.prior_type == 'sg':
         prior = GaussianPrior(M)
     elif args.prior_type == 'mog':
-        # TODO: Add MoG
+        prior = MoGPrior(M, args.batch_size, device)
         raise NotImplementedError
     elif args.prior_type == 'flow':
         # Define prior distribution

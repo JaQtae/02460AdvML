@@ -69,8 +69,8 @@ class MaskedCouplingLayer(nn.Module):
         """
         x = z
         # TODO: Implement your code here ...
-        z_prime = 
-        log_det_J =
+        z_prime = 0
+        log_det_J = 0
         return z_prime, log_det_J
     
     def inverse(self, x):
@@ -88,8 +88,8 @@ class MaskedCouplingLayer(nn.Module):
         """
         # TODO: Implement your code here ...
         z = x
-        z = 
-        log_det_J = 
+        z = 0
+        log_det_J = 0
         return z, log_det_J
 
 

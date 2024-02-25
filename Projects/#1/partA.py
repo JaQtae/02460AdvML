@@ -1,4 +1,4 @@
-from DeepGenerativeModels.Week1.vae_bernoulli_mine import (
+from src.DeepGenerativeModels.Week1.vae_bernoulli_mine import (
     VAE,
     BernoulliDecoder,
     GaussianEncoder,
@@ -8,7 +8,7 @@ from DeepGenerativeModels.Week1.vae_bernoulli_mine import (
     evaluate,
 ) 
 
-from DeepGenerativeModels.Week2.flow_mine import (
+from src.DeepGenerativeModels.Week2.flow_mine import (
     GaussianBase,
     MaskedCouplingLayer,
     Flow,
@@ -48,13 +48,16 @@ if __name__ == "__main__":
     # TODO: Make sure it's working, might need args for the flow part?
     # TODO: Add the if args.mode == 'train': ...
     # TODO: Figure out where the standard prior is // MoG // Flow-based and make seamless integration
+    import os
     
+    dir_name = os.path.dirname(os.path.abspath(__file__)) + '/'
+
     # Parse arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('mode', type=str, default='train', choices=['train', 'sample', 'eval'], help='what to do when running the script (default: %(default)s)')
     parser.add_argument('--model', type=str, default='model.pt', help='file to save model to or load model from (default: %(default)s)')
-    parser.add_argument('--prior', type=str, default='flowprior.pt', help='file to save prior to or load prior from (default: %(default)s)')  
-    parser.add_argument('--prior_type', type=str, default='SG', choices=['sg', 'mog', 'flow'], help='choice of prior (choices: %(choices)s)')
+    parser.add_argument('--prior_model', type=str, default='flowprior.pt', help='file to save prior to or load prior from (default: %(default)s)')  
+    parser.add_argument('--prior_type', type=str, default='sg', choices=['sg', 'mog', 'flow'], help='choice of prior (choices: %(choices)s)')
     parser.add_argument('--samples', type=str, default='samples.png', help='file to save samples in (default: %(default)s)')
     parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda', 'mps'], help='torch device (default: %(default)s)')
     parser.add_argument('--batch-size', type=int, default=32, metavar='N', help='batch size for training (default: %(default)s)')
@@ -72,10 +75,10 @@ if __name__ == "__main__":
     
     # Load MNIST as binarized at 'threshhold' and create data loaders
     threshold = 0.5
-    mnist_train_loader = torch.utils.data.DataLoader(datasets.MNIST('data/', train=True, download=True,
+    mnist_train_loader = torch.utils.data.DataLoader(datasets.MNIST(dir_name+'data/', train=True, download=True,
                                                                     transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: (threshold < x).float().squeeze())])),
                                                     batch_size=args.batch_size, shuffle=True)
-    mnist_test_loader = torch.utils.data.DataLoader(datasets.MNIST('data/', train=False, download=True,
+    mnist_test_loader = torch.utils.data.DataLoader(datasets.MNIST(dir_name+'data/', train=False, download=True,
                                                                 transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: (threshold < x).float().squeeze())])),
                                                     batch_size=args.batch_size, shuffle=False)
 
@@ -90,7 +93,7 @@ if __name__ == "__main__":
         raise NotImplementedError
     elif args.prior_type == 'flow':
         # Define prior distribution
-        D = next(iter(mnist_train_loader)).shape[1]
+        D = 28 # [28x28] images.
         base = GaussianBase(D)
 
         # Define transformations
@@ -112,7 +115,7 @@ if __name__ == "__main__":
             
         # TODO: Add Flow prior (Is this from a pre-trained Flow model?)
         prior = Flow(base, transformations).to(device)
-        prior.load_state_dict(torch.load(args.model, map_location=torch.device(args.device)))
+        prior.load_state_dict(torch.load(args.prior_model, map_location=torch.device(args.device)))
         
     # Define encoder and decoder networks
     encoder_net = nn.Sequential(
@@ -144,7 +147,7 @@ if __name__ == "__main__":
         train_vae(model, optimizer, mnist_train_loader, args.epochs, args.device)
         
         logger.info(f"Saving model with name: {args.model}")
-        torch.save(model.state_dict(), args.model)
+        torch.save(model.state_dict(), dir_name+args.model)
         
     elif args.mode == 'eval':
         model.load_state_dict(torch.load(args.model, map_location=torch.device(args.device)))

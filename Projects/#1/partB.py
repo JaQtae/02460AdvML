@@ -1,11 +1,11 @@
-from DeepGenerativeModels.Week2.flow_mine import (
+from src.DeepGenerativeModels.Week2.flow_mine import (
     GaussianBase,
     MaskedCouplingLayer,
     Flow,
     train as train_flow,
 )
 
-from DeepGenerativeModels.Week3.ddpm import (
+from src.DeepGenerativeModels.Week3.ddpm import (
     FcNetwork,
     DDPM,
     train as train_ddpm,
@@ -49,7 +49,9 @@ if __name__ == "__main__":
     # TODO: Make sure it's working, might need args for the flow part?
     # TODO: Add the if args.mode == 'train': ...
     # TODO: Figure out where the standard prior is // MoG // Flow-based and make seamless integration
-    
+    import os
+    dir_name = os.path.dirname(os.path.abspath(__file__)) + '/'
+
     # Parse arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('mode', type=str, default='train', choices=['train', 'sample', 'eval'], help='what to do when running the script (default: %(default)s)')
@@ -72,23 +74,22 @@ if __name__ == "__main__":
     
     
     # Define a transform to normalize the data
-    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
+    _transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
 
     # Download and load the training data
-    mnist_train = datasets.MNIST(root='./data', train=True, transform=transform, download=True)
-
-    # Create a DataLoader for the training data
-    mnist_train_loader = torch.data.DataLoader(mnist_train, batch_size=64, shuffle=True)
+    mnist_train_loader = torch.utils.data.DataLoader(datasets.MNIST(dir_name+'data/', train=True, download=True,
+                                                                    transform=_transform,
+                                                    batch_size=args.batch_size, shuffle=True))
+    mnist_test_loader = torch.utils.data.DataLoader(datasets.MNIST(dir_name+'data/', train=False, download=True,
+                                                                transform=_transform,
+                                                    batch_size=args.batch_size, shuffle=False))
 
     ######################
     ### Flow file dump ###
     ######################
+    # TODO: fix this with if statements, maybe...
+    D = 28
 
-    D = next(iter(mnist_train_loader)).shape[1]
-    
-    
-    
-    
     base = GaussianBase(D)
 
     # Define transformations
@@ -141,7 +142,7 @@ if __name__ == "__main__":
             train_ddpm(model, optimizer, mnist_train_loader, args.epochs, args.device)
         
         logger.info(f"Saving model as: {args.model}")
-        torch.save(model.state_dict(), args.model)
+        torch.save(model.state_dict(), dir_name+args.model)
         
     elif args.mode == 'sample':
         if args.model_type == 'flow':

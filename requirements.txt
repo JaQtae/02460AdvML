@@ -5,3 +5,4 @@ os
 tqdm
 scikit-learn
 matplotlib
+logging

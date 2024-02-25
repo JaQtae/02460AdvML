@@ -77,7 +77,8 @@ class FlowPrior(nn.Module):
         self.batch_size = batch_size
         self.D = D
         
-    def forward(self, z):
+    def forward(self):
+        z = torch.randn(self.batch_size, self.D).to(self.base.mean.device)
         sum_log_det_J = 0
         for T in self.transformations:
             x, log_det_J = T(z)
@@ -85,11 +86,6 @@ class FlowPrior(nn.Module):
             z = x
         return x
         
-        
-        
-        
-        
-
 
 class GaussianEncoder(nn.Module):
     def __init__(self, encoder_net):
@@ -181,7 +177,7 @@ class VAE(nn.Module):
             elbo = torch.mean(self.decoder(z).log_prob(x) - td.kl_divergence(q, self.prior()), dim=0)
         else:
             # non-Gaussian prior
-            regularization_term = q.log_prob(z) - self.prior(z)
+            regularization_term = q.log_prob(z) - self.prior()
             elbo = torch.mean(self.decoder(z).log_prob(x) - regularization_term, dim=0)
                
         return elbo

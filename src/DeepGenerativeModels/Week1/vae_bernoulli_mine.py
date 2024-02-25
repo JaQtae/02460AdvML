@@ -14,6 +14,7 @@ from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 
 
+
 class GaussianPrior(nn.Module):
     def __init__(self, M):
         """
@@ -49,15 +50,46 @@ class MoGPrior(nn.Module):
         """
         super(MoGPrior, self).__init__()
         self.M = M
+        self.device = device
         self.num_components = num_components
-        self.mean = nn.Parameter(torch.zeros(num_components, M), requires_grad=False).to(device)
-        self.logvars = nn.Parameter(torch.zeros(num_components, M), requires_grad=False).to(device)
+        self.mean = nn.Parameter(torch.zeros(num_components, M), requires_grad=False).to(self.device)
+        self.logvars = nn.Parameter(torch.zeros(num_components, M), requires_grad=False).to(self.device)
 
     def forward(self):
         # https://github.com/pytorch/pytorch/blob/main/torch/distributions/mixture_same_family.py
-        mixture_dist = td.Categorical(torch.ones(self.num_components,).to(device))
+        mixture_dist = td.Categorical(torch.ones(self.num_components,).to(self.device))
         comp_dist = td.Independent(td.Normal(loc=self.mean, scale=torch.exp(self.logvars)), 1)
         return td.MixtureSameFamily(mixture_dist, comp_dist)
+
+
+class FlowPrior(nn.Module):
+    def __init__(self, base, transformations, batch_size, D):
+        """
+        Define a Flow-based prior distribution.
+
+                Parameters:
+        M: [int] 
+           Dimension of the latent space.
+        """
+        super(FlowPrior, self).__init__()
+        self.base = base
+        self.transformations = nn.ModuleList(transformations)
+        self.batch_size = batch_size
+        self.D = D
+        
+    def forward(self, z):
+        sum_log_det_J = 0
+        for T in self.transformations:
+            x, log_det_J = T(z)
+            sum_log_det_J += log_det_J
+            z = x
+        return x
+        
+        
+        
+        
+        
+
 
 class GaussianEncoder(nn.Module):
     def __init__(self, encoder_net):
@@ -143,11 +175,15 @@ class VAE(nn.Module):
         """
         q = self.encoder(x)
         z = q.rsample()
+        print(f"Type of prior: {type(self.prior)}")
+        
         if type(self.prior) == "GaussianPrior":
             elbo = torch.mean(self.decoder(z).log_prob(x) - td.kl_divergence(q, self.prior()), dim=0)
         else:
-            regularization_term = q.log_prob(z) - self.prior().log_prob(z)
+            # non-Gaussian prior
+            regularization_term = q.log_prob(z) - self.prior(z)
             elbo = torch.mean(self.decoder(z).log_prob(x) - regularization_term, dim=0)
+               
         return elbo
 
     def sample(self, n_samples=1):

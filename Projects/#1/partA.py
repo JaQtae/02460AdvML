@@ -4,6 +4,7 @@ from src.DeepGenerativeModels.Week1.vae_bernoulli_mine import (
     GaussianEncoder,
     GaussianPrior,
     MoGPrior,
+    FlowPrior,
     train as train_vae,
     evaluate,
 ) 
@@ -49,6 +50,7 @@ if __name__ == "__main__":
     # TODO: Add the if args.mode == 'train': ...
     # TODO: Figure out where the standard prior is // MoG // Flow-based and make seamless integration
     import os
+    # Define encoder and decoder networks
     
     dir_name = os.path.dirname(os.path.abspath(__file__)) + '/'
 
@@ -56,7 +58,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('mode', type=str, default='train', choices=['train', 'sample', 'eval'], help='what to do when running the script (default: %(default)s)')
     parser.add_argument('--model', type=str, default='model.pt', help='file to save model to or load model from (default: %(default)s)')
-    parser.add_argument('--prior_model', type=str, default='flowprior.pt', help='file to save prior to or load prior from (default: %(default)s)')  
     parser.add_argument('--prior_type', type=str, default='sg', choices=['sg', 'mog', 'flow'], help='choice of prior (choices: %(choices)s)')
     parser.add_argument('--samples', type=str, default='samples.png', help='file to save samples in (default: %(default)s)')
     parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda', 'mps'], help='torch device (default: %(default)s)')
@@ -85,15 +86,33 @@ if __name__ == "__main__":
     # Define prior distribution
     M = args.latent_dim
     
+    encoder_net = nn.Sequential(
+        nn.Flatten(),
+        nn.Linear(784, 512),
+        nn.ReLU(),
+        nn.Linear(512, 512),
+        nn.ReLU(),
+        nn.Linear(512, M*2),
+    )
+    decoder_net = nn.Sequential(
+        nn.Linear(M, 512),
+        nn.ReLU(),
+        nn.Linear(512, 512),
+        nn.ReLU(),
+        nn.Linear(512, 784),
+        nn.Unflatten(-1, (28, 28))
+    )
+    
     # Choose model
     if args.prior_type == 'sg':
         prior = GaussianPrior(M)
+        
     elif args.prior_type == 'mog':
-        prior = MoGPrior(M, args.batch_size, device)
-        raise NotImplementedError
+        prior = MoGPrior(M, args.batch_size, args.device)
+        
     elif args.prior_type == 'flow':
         # Define prior distribution
-        D = 28 # [28x28] images.
+        D = next(iter(mnist_train_loader))[0].shape[1]
         base = GaussianBase(D)
 
         # Define transformations
@@ -113,27 +132,8 @@ if __name__ == "__main__":
             translation_net = nn.Sequential(nn.Linear(D, num_hidden), nn.ReLU(), nn.Linear(num_hidden, D))
             transformations.append(MaskedCouplingLayer(scale_net, translation_net, mask))
             
-        # TODO: Add Flow prior (Is this from a pre-trained Flow model?)
-        prior = Flow(base, transformations).to(device)
-        prior.load_state_dict(torch.load(args.prior_model, map_location=torch.device(args.device)))
+        prior = FlowPrior(base, transformations, args.batch_size, D)
         
-    # Define encoder and decoder networks
-    encoder_net = nn.Sequential(
-        nn.Flatten(),
-        nn.Linear(784, 512),
-        nn.ReLU(),
-        nn.Linear(512, 512),
-        nn.ReLU(),
-        nn.Linear(512, M*2),
-    )
-    decoder_net = nn.Sequential(
-        nn.Linear(M, 512),
-        nn.ReLU(),
-        nn.Linear(512, 512),
-        nn.ReLU(),
-        nn.Linear(512, 784),
-        nn.Unflatten(-1, (28, 28))
-    )
 
     # Define VAE model
     decoder = BernoulliDecoder(decoder_net)
@@ -143,7 +143,8 @@ if __name__ == "__main__":
 
     if args.mode == 'train':
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-        logger.info("Starting training...")
+        logger.info("Starting training model...")
+        
         train_vae(model, optimizer, mnist_train_loader, args.epochs, args.device)
         
         logger.info(f"Saving model with name: {args.model}")

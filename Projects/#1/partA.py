@@ -111,8 +111,8 @@ if __name__ == "__main__":
             transformations.append(MaskedCouplingLayer(scale_net, translation_net, mask))
             
         # TODO: Add Flow prior (Is this from a pre-trained Flow model?)
-        flowprior = Flow(base, transformations).to(device)
-        flowprior.load_state_dict(torch.load(args.model, map_location=torch.device(args.device)))
+        prior = Flow(base, transformations).to(device)
+        prior.load_state_dict(torch.load(args.model, map_location=torch.device(args.device)))
         
     # Define encoder and decoder networks
     encoder_net = nn.Sequential(

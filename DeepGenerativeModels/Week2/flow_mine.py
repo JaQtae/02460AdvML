@@ -236,7 +236,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('mode', type=str, default='train', choices=['train', 'sample'], help='what to do when running the script (default: %(default)s)')
-    parser.add_argument('--data', type=str, default='tg', choices=['tg', 'cb'], help='toy dataset to use {tg: two Gaussians, cb: chequerboard} (default: %(default)s)')
+    parser.add_argument('--data', type=str, default='tg', choices=['tg', 'cb', 'binmnist'], help='toy dataset to use {tg: two Gaussians, cb: chequerboard} (default: %(default)s)')
     parser.add_argument('--model', type=str, default='model.pt', help='file to save model to or load model from (default: %(default)s)')
     parser.add_argument('--samples', type=str, default='samples.png', help='file to save samples in (default: %(default)s)')
     parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda', 'mps'], help='torch device (default: %(default)s)')
@@ -252,14 +252,33 @@ if __name__ == "__main__":
     device = args.device
 
     # Generate the data
-    n_data = 10000000
-    batch_size = 10000
-    toy = {'tg': ToyData.TwoGaussians, 'cb': ToyData.Chequerboard}[args.data]()
-    train_loader = torch.utils.data.DataLoader(toy().sample((n_data,)), batch_size=batch_size, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(toy().sample((n_data,)), batch_size=batch_size, shuffle=True)
+    if args.data == 'tg' or args.data == 'cb':
+        n_data = 10000000
+        batch_size = 10000
+        toy = {'tg': ToyData.TwoGaussians, 'cb': ToyData.Chequerboard}[args.data]()
+        train_loader = torch.utils.data.DataLoader(toy().sample((n_data,)), batch_size=batch_size, shuffle=True)
+        test_loader = torch.utils.data.DataLoader(toy().sample((n_data,)), batch_size=batch_size, shuffle=True)
 
+        D = next(iter(train_loader)).shape[1]
+        print(f"D: {D}")
+        
+        
+    elif args.data == 'binmnist':
+    
+        # For project we need a pre-trained flow-based prior on the binarized mnist data
+        threshold = 0.5
+        train_loader = torch.utils.data.DataLoader(datasets.MNIST('data/', train=True, download=True,
+                                                                        transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: (threshold < x).float().squeeze())])),
+                                                        batch_size=args.batch_size, shuffle=True)
+        test_loader = torch.utils.data.DataLoader(datasets.MNIST('data/', train=False, download=True,
+                                                                    transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: (threshold < x).float().squeeze())])),
+                                                        batch_size=args.batch_size, shuffle=False)
+        
+        D = 28 # Images are 28x28
+        
+        
     # Define prior distribution
-    D = next(iter(train_loader)).shape[1]
+    
     base = GaussianBase(D)
 
     # Define transformations

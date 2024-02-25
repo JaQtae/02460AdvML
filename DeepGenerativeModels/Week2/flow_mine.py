@@ -231,6 +231,9 @@ if __name__ == "__main__":
     from torchvision import datasets, transforms
     from torchvision.utils import save_image
     import ToyData
+    import os
+    
+    dir_name = os.path.dirname(os.path.abspath(__file__)) + '/'
 
     # Parse arguments
     import argparse
@@ -267,10 +270,10 @@ if __name__ == "__main__":
     
         # For project we need a pre-trained flow-based prior on the binarized mnist data
         threshold = 0.5
-        train_loader = torch.utils.data.DataLoader(datasets.MNIST('data/', train=True, download=True,
+        train_loader = torch.utils.data.DataLoader(datasets.MNIST(dir_name+'data/', train=True, download=True,
                                                                         transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: (threshold < x).float().squeeze())])),
                                                         batch_size=args.batch_size, shuffle=True)
-        test_loader = torch.utils.data.DataLoader(datasets.MNIST('data/', train=False, download=True,
+        test_loader = torch.utils.data.DataLoader(datasets.MNIST(dir_name+'data/', train=False, download=True,
                                                                     transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: (threshold < x).float().squeeze())])),
                                                         batch_size=args.batch_size, shuffle=False)
         
@@ -310,7 +313,7 @@ if __name__ == "__main__":
         train(model, optimizer, train_loader, args.epochs, args.device)
 
         # Save model
-        torch.save(model.state_dict(), args.model)
+        torch.save(model.state_dict(), dir_name+args.model)
 
     elif args.mode == 'sample':
         import matplotlib.pyplot as plt

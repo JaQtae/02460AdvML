@@ -1,6 +1,7 @@
-# Ignore all files in data subdirectories and any .pt files.
+# Ignore all files in data subdirectories and any .pt files or images.
 **/data/*
 **/*.pt
+**/*.png
 
 
 .vscode/

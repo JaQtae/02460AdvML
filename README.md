@@ -8,7 +8,7 @@ conda activate <your-venv-name> # You should see (<your-venv-name>) in the left 
 pip install -r requirements.txt
 ```
 
-All weeks contain the original, unaltered code handed out alongside the proposed solutions from the exercises, some not completely done.
+All weeks contain the original, unaltered code handouts. Alongside them are `*_mine.py`, which are my proposed solutions, which may be incomplete.
 
 ### TODO:
 - [ ] Add the theoretical exercise solutions.

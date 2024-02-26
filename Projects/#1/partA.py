@@ -16,7 +16,13 @@ from .utils import (
     _get_decoder,
     _get_encoder,
     _get_mask_tranformations,
-    _get_binarized_mnist,
+    _get_mnist,
+    plot_prior_and_aggr_posterior,
+)
+
+from torchvision.utils import (
+    save_image, 
+    make_grid,
 )
 
 import torch
@@ -38,9 +44,9 @@ if __name__ == "__main__":
     # Parse arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('mode', type=str, default='train', choices=['train', 'sample', 'eval'], help='what to do when running the script (default: %(default)s)')
-    parser.add_argument('--model', type=str, default='model.pt', help='file to save model to or load model from (default: %(default)s)')
+    parser.add_argument('--model', type=str, default='sgmodel.pt', help='file to save model to or load model from (default: %(default)s)')
     parser.add_argument('--prior_type', type=str, default='sg', choices=['sg', 'mog', 'flow'], help='choice of prior (choices: %(choices)s)')
-    parser.add_argument('--samples', type=str, default='samples.png', help='file to save samples in (default: %(default)s)')
+#    parser.add_argument('--samples', type=str, default='samples.png', help='file to save samples in (default: %(default)s)')
     parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda', 'mps'], help='torch device (default: %(default)s)')
     parser.add_argument('--batch-size', type=int, default=32, metavar='N', help='batch size for training (default: %(default)s)')
     parser.add_argument('--epochs', type=int, default=10, metavar='N', help='number of epochs to train (default: %(default)s)')
@@ -56,8 +62,9 @@ if __name__ == "__main__":
     device = args.device
     
     # Loading binarized MNIST with given batch_size.
-    mnist_train_loader, mnist_test_loader = _get_binarized_mnist(path=dir_name,
-                                                              batch_size=args.batch_size)
+    mnist_train_loader, mnist_test_loader = _get_mnist(path=dir_name,
+                                                       batch_size=args.batch_size,
+                                                       binarized=True)
     # Define prior distribution
     M = args.latent_dim
     
@@ -73,7 +80,6 @@ if __name__ == "__main__":
         prior = MoGPrior(M, args.batch_size, args.device)
         
     elif args.prior_type == 'flow':
-        # Define prior distribution
         base, transformations = _get_mask_tranformations(M)
         prior = Flow(base, transformations).to(device)
         
@@ -93,8 +99,19 @@ if __name__ == "__main__":
         logger.info(f"Saving model with name: {args.model}")
         torch.save(model.state_dict(), dir_name+args.model)
         
+    elif args.mode == 'sample':
+        model.load_state_dict(torch.load(dir_name+args.model, map_location=torch.device(args.device)))
+        # Generate samples
+        model.eval()
+        with torch.no_grad():
+            samples = (model.sample(64)).cpu() 
+            save_image(samples.view(64, 1, 28, 28),
+                       dir_name+args.prior_type+'_samples.png')
+        
+        plot_prior_and_aggr_posterior(model, mnist_test_loader, args.batch_size, args.device)
+        
     elif args.mode == 'eval':
-        model.load_state_dict(torch.load(args.model, map_location=torch.device(args.device)))
+        model.load_state_dict(torch.load(dir_name+args.model, map_location=torch.device(args.device)))
         
         logger.info(f"Test loss: {evaluate(model, mnist_test_loader)}")
         

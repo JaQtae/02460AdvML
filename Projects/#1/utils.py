@@ -1,5 +1,7 @@
 import numpy as np
-import os
+from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 import torch
 import torch.nn as nn
@@ -68,18 +70,64 @@ def _get_mask_tranformations(dim: int):
         
     return base, transformations
 
-def _get_binarized_mnist(path: str, batch_size):
+def _get_mnist(path: str, batch_size: int, binarized: bool):
     """
     Gives you back the binarized MNIST dataset in batches of <batch_size>. 
     Saves the data to <dir-name>/data/*.
     """
+    if binarized:
     # Load MNIST as binarized at 'threshhold' and create data loaders
-    threshold = 0.5
-    mnist_train_loader = DataLoader(datasets.MNIST(path+'data/', train=True, download=True,
+        threshold = 0.5
+        mnist_train_loader = DataLoader(datasets.MNIST(path+'data/', train=True, download=True,
+                                                                        transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: (threshold < x).float().squeeze())])),
+                                                        batch_size=batch_size, shuffle=True)
+        mnist_test_loader = DataLoader(datasets.MNIST(path+'data/', train=False, download=True,
                                                                     transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: (threshold < x).float().squeeze())])),
+                                                        batch_size=batch_size, shuffle=False)
+    else: 
+        mnist_train_loader = DataLoader(datasets.MNIST(path+'data/', train=True, download=True,
+                                                                    transform=transforms.Compose([transforms.ToTensor (), transforms.Lambda(lambda x: x.squeeze ())])),
                                                     batch_size=batch_size, shuffle=True)
-    mnist_test_loader = DataLoader(datasets.MNIST(path+'data/', train=False, download=True,
-                                                                transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: (threshold < x).float().squeeze())])),
+        mnist_test_loader = DataLoader(datasets.MNIST(path+'data/', train=False, download=True,
+                                                                transform=transforms.Compose([transforms.ToTensor (), transforms.Lambda(lambda x: x.squeeze ())])),
                                                     batch_size=batch_size, shuffle=False)
-
     return mnist_train_loader, mnist_test_loader
+
+    
+
+def plot_prior_and_aggr_posterior(model, data_loader, batch_size,device): 
+    # TODO: Should probably be more of a plot like: https://jmtomczak.github.io/blog/7/7_priors.html
+    from sklearn.mixture import GaussianMixture
+    model.eval()
+    post_samples = torch.empty((0,batch_size)).to(device)
+    prior_samples = torch.empty((0,batch_size)).to(device)
+    targets = torch.empty((0)).to(device)
+
+    
+    # just plots the labels and the distribution of the samples PCA'd...          
+    # PCA to take it from latent_dim --> 2 dimensions
+    pca = PCA(n_components=2)
+    print(f"Post_samples: {post_samples.shape}")
+    print(f"Prior_samples: {prior_samples.shape}")
+    
+    # Do I have to fit to both aggr and prior, seperately??
+    pca.fit(post_samples.cpu().numpy())
+    
+    post_samples_pca = pca.transform(post_samples.cpu().numpy())
+    prior_samples_pca = pca.transform(prior_samples.cpu().numpy())
+    
+    plt.figure(figsize=(12, 5))
+    # Plot Aggregate Posterior
+    plt.subplot(1, 2, 1)
+    plt.scatter(post_samples_pca[:, 0], post_samples_pca[:, 1], c=targets.cpu().numpy(), cmap='tab10')
+    plt.title('Aggregate Posterior')
+    plt.colorbar()
+
+    # Plot Prior
+    plt.subplot(1, 2, 2)
+    plt.scatter(prior_samples_pca[:, 0], prior_samples_pca[:, 1], cmap='tab10', marker='x')
+    plt.title('Prior')
+
+    plt.show()
+
+

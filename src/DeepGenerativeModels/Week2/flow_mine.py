@@ -68,6 +68,8 @@ class MaskedCouplingLayer(nn.Module):
             The sum of the log determinants of the Jacobian matrices of the forward transformations of dimension `(batch_size, feature_dim)`.
         """
         x = z
+        print(f"mask shape: {self.mask.shape}")
+        print(f"x shape: {x.shape}")
         z_prime = self.mask * x + (1 - self.mask) * ( x * torch.exp(self.scale_net(self.mask * x)) + self.translation_net(self.mask * x) )
         log_det_J = torch.sum( ( 1 - self.mask) * self.scale_net( self.mask * x), dim=-1)
         return z_prime, log_det_J

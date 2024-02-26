@@ -4,54 +4,35 @@ from src.DeepGenerativeModels.Week1.vae_bernoulli_mine import (
     GaussianEncoder,
     GaussianPrior,
     MoGPrior,
-    FlowPrior,
     train as train_vae,
     evaluate,
 ) 
 
 from src.DeepGenerativeModels.Week2.flow_mine import (
-    GaussianBase,
-    MaskedCouplingLayer,
     Flow,
-    train as train_flow,
 )
 
-from torchvision import (
-    datasets,
-    transforms,
-)
-from torchvision.utils import (
-    save_image, 
-    make_grid,
-)
-from torch.utils.data import (
-    DataLoader,
+from .utils import (
+    _get_decoder,
+    _get_encoder,
+    _get_mask_tranformations,
+    _get_binarized_mnist,
 )
 
 import torch
-import torch.nn as nn
-import torch.distributions as td
-from sklearn.decomposition import PCA
-
-import glob
 import logging
 import argparse
-import matplotlib.pyplot as plt
-import numpy as np
-from tqdm import tqdm
+import os
 
 logger = logging.getLogger()
 
-######################
-#####  CODE DUMP #####
-######################
+
 if __name__ == "__main__":
     # TODO: Make sure it's working, might need args for the flow part?
     # TODO: Add the if args.mode == 'train': ...
     # TODO: Figure out where the standard prior is // MoG // Flow-based and make seamless integration
-    import os
-    # Define encoder and decoder networks
     
+    # Define the path to the folder where the current script file is.
     dir_name = os.path.dirname(os.path.abspath(__file__)) + '/'
 
     # Parse arguments
@@ -74,36 +55,17 @@ if __name__ == "__main__":
 
     device = args.device
     
-    # Load MNIST as binarized at 'threshhold' and create data loaders
-    threshold = 0.5
-    mnist_train_loader = torch.utils.data.DataLoader(datasets.MNIST(dir_name+'data/', train=True, download=True,
-                                                                    transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: (threshold < x).float().squeeze())])),
-                                                    batch_size=args.batch_size, shuffle=True)
-    mnist_test_loader = torch.utils.data.DataLoader(datasets.MNIST(dir_name+'data/', train=False, download=True,
-                                                                transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: (threshold < x).float().squeeze())])),
-                                                    batch_size=args.batch_size, shuffle=False)
-
+    # Loading binarized MNIST with given batch_size.
+    mnist_train_loader, mnist_test_loader = _get_binarized_mnist(path=dir_name,
+                                                              batch_size=args.batch_size)
     # Define prior distribution
     M = args.latent_dim
     
-    encoder_net = nn.Sequential(
-        nn.Flatten(),
-        nn.Linear(784, 512),
-        nn.ReLU(),
-        nn.Linear(512, 512),
-        nn.ReLU(),
-        nn.Linear(512, M*2),
-    )
-    decoder_net = nn.Sequential(
-        nn.Linear(M, 512),
-        nn.ReLU(),
-        nn.Linear(512, 512),
-        nn.ReLU(),
-        nn.Linear(512, 784),
-        nn.Unflatten(-1, (28, 28))
-    )
+    # Define the encoder and decoder networks
+    encoder_net = _get_encoder(M)
+    decoder_net = _get_decoder(M)
     
-    # Choose model
+    # Choose which prior to use in the VAE.
     if args.prior_type == 'sg':
         prior = GaussianPrior(M)
         
@@ -112,27 +74,8 @@ if __name__ == "__main__":
         
     elif args.prior_type == 'flow':
         # Define prior distribution
-        D = next(iter(mnist_train_loader))[0].shape[1]
-        base = GaussianBase(D)
-
-        # Define transformations
-        transformations =[]
-        mask = torch.Tensor([1 if (i+j) % 2 == 0 else 0 for i in range(28) for j in range(28)])
-        
-        num_transformations = 5
-        num_hidden = 8
-
-        # Make a mask that is 1 for the first half of the features and 0 for the second half
-        mask = torch.zeros((D,))
-        mask[D//2:] = 1
-        
-        for i in range(num_transformations):
-            mask = (1-mask) # Flip the mask
-            scale_net = nn.Sequential(nn.Linear(D, num_hidden), nn.ReLU(), nn.Linear(num_hidden, D))
-            translation_net = nn.Sequential(nn.Linear(D, num_hidden), nn.ReLU(), nn.Linear(num_hidden, D))
-            transformations.append(MaskedCouplingLayer(scale_net, translation_net, mask))
-            
-        prior = FlowPrior(base, transformations, args.batch_size, D)
+        base, transformations = _get_mask_tranformations(M)
+        prior = Flow(base, transformations).to(device)
         
 
     # Define VAE model

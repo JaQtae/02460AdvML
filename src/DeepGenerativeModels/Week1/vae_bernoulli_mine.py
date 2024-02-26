@@ -61,31 +61,7 @@ class MoGPrior(nn.Module):
         comp_dist = td.Independent(td.Normal(loc=self.mean, scale=torch.exp(self.logvars)), 1)
         return td.MixtureSameFamily(mixture_dist, comp_dist)
 
-
-class FlowPrior(nn.Module):
-    def __init__(self, base, transformations, batch_size, D):
-        """
-        Define a Flow-based prior distribution.
-
-                Parameters:
-        M: [int] 
-           Dimension of the latent space.
-        """
-        super(FlowPrior, self).__init__()
-        self.base = base
-        self.transformations = nn.ModuleList(transformations)
-        self.batch_size = batch_size
-        self.D = D
-        
-    def forward(self):
-        z = torch.randn(self.batch_size, self.D).to(self.base.mean.device)
-        sum_log_det_J = 0
-        for T in self.transformations:
-            x, log_det_J = T(z)
-            sum_log_det_J += log_det_J
-            z = x
-        return x
-        
+   
 
 class GaussianEncoder(nn.Module):
     def __init__(self, encoder_net):
@@ -109,12 +85,7 @@ class GaussianEncoder(nn.Module):
         x: [torch.Tensor] 
            A tensor of dimension `(batch_size, feature_dim1, feature_dim2)`
         """
-        #print(f"mean: {mean.shape}")
         mean, std = torch.chunk(self.encoder_net(x), 2, dim=-1)
-        print(f"enc mean: {mean.shape}")
-        print(f"enc std: {std.shape}")
-        out = td.Independent(td.Normal(loc=mean, scale=torch.exp(std)), 1)
-        print(f"enc: {out}")
         return td.Independent(td.Normal(loc=mean, scale=torch.exp(std)), 1)
 
 
@@ -174,19 +145,13 @@ class VAE(nn.Module):
         x: [torch.Tensor] 
            A tensor of dimension `(batch_size, feature_dim1, feature_dim2, ...)`
         """
-        print(f"x looks like: {x.shape}")
         q = self.encoder(x)
         z = q.rsample()
-        print(f"z looks like: {z.shape}")
-        print(f"Type of prior: {type(self.prior)}")
-        
         if type(self.prior) == "GaussianPrior":
             elbo = torch.mean(self.decoder(z).log_prob(x) - td.kl_divergence(q, self.prior()), dim=0)
         else:
-            # non-Gaussian prior
-            print(q.log_prob(z).shape)
-            print(self.prior().shape)
-            regularization_term = q.log_prob(z) - self.prior()
+            # non-Gaussian prior (e.g. MoGPrior and Flow-based prior)
+            regularization_term = q.log_prob(z) - self.prior.log_prob(z) # Uses the inverse
             elbo = torch.mean(self.decoder(z).log_prob(x) - regularization_term, dim=0)
                
         return elbo

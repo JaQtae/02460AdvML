@@ -95,39 +95,37 @@ def _get_mnist(path: str, batch_size: int, binarized: bool):
 
     
 
-def plot_prior_and_aggr_posterior(model, data_loader, batch_size,device): 
-    # TODO: Should probably be more of a plot like: https://jmtomczak.github.io/blog/7/7_priors.html
-    from sklearn.mixture import GaussianMixture
-    model.eval()
-    post_samples = torch.empty((0,batch_size)).to(device)
-    prior_samples = torch.empty((0,batch_size)).to(device)
+def plot_prior_and_aggr_posterior_2d(model, data_loader, latent_dim, n_samples, device): 
+    # Define a grid for the latent space
+    x = torch.linspace(-7, 7, 100).to(device)
+    y = torch.linspace(-7, 7, 100).to(device)
+    xx, yy = torch.meshgrid(x, y)
+
+    # Evaluate the prior log probability on the grid
+    prior_log_prob = model.prior().log_prob(torch.stack([xx, yy], dim=-1)).view(100, 100).cpu().numpy()
+
+    # Collect posterior samples
+    post_samples = torch.empty((0, latent_dim)).to(device)
     targets = torch.empty((0)).to(device)
+    with torch.no_grad():
+        for x, target in tqdm(data_loader):
+            x = x.to(device)
+            target = target.to(device)
+            q = model.encoder(x)
 
-    
-    # just plots the labels and the distribution of the samples PCA'd...          
-    # PCA to take it from latent_dim --> 2 dimensions
-    pca = PCA(n_components=2)
-    print(f"Post_samples: {post_samples.shape}")
-    print(f"Prior_samples: {prior_samples.shape}")
-    
-    # Do I have to fit to both aggr and prior, seperately??
-    pca.fit(post_samples.cpu().numpy())
-    
-    post_samples_pca = pca.transform(post_samples.cpu().numpy())
-    prior_samples_pca = pca.transform(prior_samples.cpu().numpy())
-    
-    plt.figure(figsize=(12, 5))
-    # Plot Aggregate Posterior
-    plt.subplot(1, 2, 1)
-    plt.scatter(post_samples_pca[:, 0], post_samples_pca[:, 1], c=targets.cpu().numpy(), cmap='tab10')
-    plt.title('Aggregate Posterior')
+            z = q.sample()  # [batch_size, latent_dim]
+            post_samples = torch.cat((post_samples, z), dim=0)
+            targets = torch.cat((targets, target), dim=0)
+
+    # Plot the prior contour
+    plt.contourf(xx.cpu().numpy(), yy.cpu().numpy(), prior_log_prob, cmap='viridis')
+    # Plot the projected posterior samples
+    plt.scatter(post_samples[:n_samples, 0].cpu().numpy(), post_samples[:n_samples, 1].cpu().numpy(), c=targets[:n_samples].cpu().numpy(), cmap='tab10')
     plt.colorbar()
+    # Add labels and title
+    plt.title("Prior Contour and Posterior Samples")
 
-    # Plot Prior
-    plt.subplot(1, 2, 2)
-    plt.scatter(prior_samples_pca[:, 0], prior_samples_pca[:, 1], cmap='tab10', marker='x')
-    plt.title('Prior')
-
+    # Show the plot
     plt.show()
-
+    
 

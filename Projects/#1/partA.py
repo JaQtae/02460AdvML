@@ -17,7 +17,7 @@ from .utils import (
     _get_encoder,
     _get_mask_tranformations,
     _get_mnist,
-    plot_prior_and_aggr_posterior,
+    plot_prior_and_aggr_posterior_2d,
 )
 
 from torchvision.utils import (
@@ -91,9 +91,9 @@ if __name__ == "__main__":
 
 
     if args.mode == 'train':
+        #for i in range(10):
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-        logger.info("Starting training model...")
-        
+        logger.info("Starting training model ...")
         train_vae(model, optimizer, mnist_train_loader, args.epochs, args.device)
         
         logger.info(f"Saving model with name: {args.model}")
@@ -108,10 +108,15 @@ if __name__ == "__main__":
             save_image(samples.view(64, 1, 28, 28),
                        dir_name+args.prior_type+'_samples.png')
         
-        plot_prior_and_aggr_posterior(model, mnist_test_loader, args.batch_size, args.device)
+        n_samples = 1000
+        
+        plot_prior_and_aggr_posterior_2d(model, mnist_test_loader, args.latent_dim, n_samples, args.device)
         
     elif args.mode == 'eval':
         model.load_state_dict(torch.load(dir_name+args.model, map_location=torch.device(args.device)))
-        
+
         logger.info(f"Test loss: {evaluate(model, mnist_test_loader)}")
+        
+
+            
         

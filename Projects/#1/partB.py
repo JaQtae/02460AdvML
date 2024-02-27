@@ -34,6 +34,7 @@ import argparse
 import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
+import pdb
 
 logger = logging.getLogger()
 
@@ -74,21 +75,22 @@ if __name__ == "__main__":
     
     
     # Define a transform to normalize the data
-    _transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
+    #_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
+    _transform = transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: x.flatten())])
 
     # Download and load the training data
     mnist_train_loader = torch.utils.data.DataLoader(datasets.MNIST(dir_name+'data/', train=True, download=True,
-                                                                    transform=_transform,
-                                                    batch_size=args.batch_size, shuffle=True))
+                                                                    transform=_transform),
+                                                    batch_size=args.batch_size, shuffle=True)
     mnist_test_loader = torch.utils.data.DataLoader(datasets.MNIST(dir_name+'data/', train=False, download=True,
-                                                                transform=_transform,
-                                                    batch_size=args.batch_size, shuffle=False))
+                                                                transform=_transform),
+                                                    batch_size=args.batch_size, shuffle=False)
 
     ######################
     ### Flow file dump ###
     ######################
     # TODO: fix this with if statements, maybe...
-    D = 28
+    D = next(iter(mnist_train_loader))[0].shape[1]
 
     base = GaussianBase(D)
 
@@ -96,21 +98,22 @@ if __name__ == "__main__":
     transformations =[]
     mask = torch.Tensor([1 if (i+j) % 2 == 0 else 0 for i in range(28) for j in range(28)])
 
-    num_transformations = 5
-    num_hidden = 8
+    num_transformations = 10
+    num_hidden = 128*2
 
     # Make a mask that is 1 for the first half of the features and 0 for the second half
     mask = torch.zeros((D,))
     mask[D//2:] = 1
 
+    # checkboard mask
+    mask = (torch.arange(D) % 2).float()
+
     for i in range(num_transformations):
         mask = (1-mask) # Flip the mask
-        scale_net = nn.Sequential(nn.Linear(D, num_hidden), nn.ReLU(), nn.Linear(num_hidden, D))
-        translation_net = nn.Sequential(nn.Linear(D, num_hidden), nn.ReLU(), nn.Linear(num_hidden, D))
-        transformations.append(MaskedCouplingLayer(scale_net, translation_net, mask))    
-    
-    
-    
+        scale_net = nn.Sequential(nn.Linear(D, D//2), nn.ReLU(), nn.Linear(D//2, 2*num_hidden), nn.ReLU(), nn.Linear(2*num_hidden, num_hidden), nn.ReLU(), nn.Linear(num_hidden, D), nn.Tanh())
+        translation_net = nn.Sequential(nn.Linear(D, D//2), nn.ReLU(), nn.Linear(D//2, 2*num_hidden), nn.ReLU(), nn.Linear(2*num_hidden, num_hidden), nn.ReLU(), nn.Linear(num_hidden, D))
+        transformations.append(MaskedCouplingLayer(scale_net, translation_net, mask))   
+
     ##########
     ## DDPM ##
     ##########
@@ -125,9 +128,6 @@ if __name__ == "__main__":
         model = Flow(base, transformations).to(device)
     elif args.model_type == 'ddpm':
         model = DDPM(network, T=T).to(args.device)
-
-    
-
 
     if args.mode == 'train':   
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
@@ -147,27 +147,21 @@ if __name__ == "__main__":
     elif args.mode == 'sample':
         if args.model_type == 'flow':
             logger.info(f"Sampling {args.model_type} model")
-            model.load_state_dict(torch.load(args.model, map_location=torch.device(args.device)))
+            model.load_state_dict(torch.load(dir_name+args.model, map_location=torch.device(args.device)))
 
         # Generate samples
             model.eval()
             with torch.no_grad():
-                samples = (model.sample((10000,))).cpu() 
+                import os
+                if not os.path.exists(dir_name + "mnist_flow_samples"):
+                    os.makedirs(dir_name + "mnist_flow_samples")
+                n_samples = 64
+                for sample in range(n_samples):
+                    samples = (model.sample((1,))).cpu()
+                    #samples = (samples - samples.min()) / (samples.max() - samples.min()) 
+                    save_image(samples.view(1, 1, 28, 28), f"{dir_name}\mnist_flow_samples\sample_{sample}.png")
 
-            # TODO: Update the below to reflect it happening on MNIST
-            # Plot the density of the toy data and the model samples
-            coordinates = [[[x,y] for x in np.linspace(*toy.xlim, 1000)] for y in np.linspace(*toy.ylim, 1000)]
-            prob = torch.exp(toy().log_prob(torch.tensor(coordinates)))
 
-            fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-            im = ax.imshow(prob, extent=[toy.xlim[0], toy.xlim[1], toy.ylim[0], toy.ylim[1]], origin='lower', cmap='YlOrRd')
-            ax.scatter(samples[:, 0], samples[:, 1], s=1, c='black', alpha=0.5)
-            ax.set_xlim(toy.xlim)
-            ax.set_ylim(toy.ylim)
-            ax.set_aspect('equal')
-            fig.colorbar(im)
-            plt.savefig(args.samples)
-            plt.close()
             
         elif args.model_type == 'ddpm':
             import matplotlib.pyplot as plt

@@ -136,6 +136,7 @@ class VAE(nn.Module):
         self.prior = prior
         self.decoder = decoder
         self.encoder = encoder
+        
 
     def elbo(self, x):
         """
@@ -147,7 +148,7 @@ class VAE(nn.Module):
         """
         q = self.encoder(x)
         z = q.rsample()
-        if type(self.prior) == "GaussianPrior":
+        if self.prior.__class__.__name__ == "GaussianPrior":
             elbo = torch.mean(self.decoder(z).log_prob(x) - td.kl_divergence(q, self.prior()), dim=0)
         else:
             # non-Gaussian prior (e.g. MoGPrior and Flow-based prior)
@@ -221,7 +222,7 @@ def train(model, optimizer, data_loader, epochs, device):
 def evaluate(model, dataset):
     test_loss = 0.0
     for x, y in dataset:
-        test_loss += model(x).item()
+        test_loss += model(x).item() #log_prob
         
     test_loss /= len(dataset)
         

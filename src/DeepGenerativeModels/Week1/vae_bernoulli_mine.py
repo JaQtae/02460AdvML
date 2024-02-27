@@ -60,6 +60,10 @@ class MoGPrior(nn.Module):
         mixture_dist = td.Categorical(torch.ones(self.num_components,).to(self.device))
         comp_dist = td.Independent(td.Normal(loc=self.mean, scale=torch.exp(self.logvars)), 1)
         return td.MixtureSameFamily(mixture_dist, comp_dist)
+    
+    def log_prob(self, z):
+        # To return a log_prob of the forward, thus matching Flow-class callable in ELBO.
+        return self.forward().log_prob(z)
 
    
 
@@ -150,10 +154,12 @@ class VAE(nn.Module):
         z = q.rsample()
         if self.prior.__class__.__name__ == "GaussianPrior":
             elbo = torch.mean(self.decoder(z).log_prob(x) - td.kl_divergence(q, self.prior()), dim=0)
+        #elif self.prior.__class__.__name__ == "MoGPrior":
         else:
             # non-Gaussian prior (e.g. MoGPrior and Flow-based prior)
             regularization_term = q.log_prob(z) - self.prior.log_prob(z) # Uses the inverse
             elbo = torch.mean(self.decoder(z).log_prob(x) - regularization_term, dim=0)
+
                
         return elbo
 

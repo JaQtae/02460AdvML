@@ -75,7 +75,7 @@ if __name__ == "__main__":
     
     
     # Define a transform to normalize the data
-    _transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
+    #_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
     _transform = transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: x.flatten())])
 
     # Download and load the training data

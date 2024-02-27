@@ -96,8 +96,6 @@ if __name__ == "__main__":
 
     # Define transformations
     transformations =[]
-    mask = torch.Tensor([1 if (i+j) % 2 == 0 else 0 for i in range(28) for j in range(28)])
-
     num_transformations = 10
     num_hidden = 128*2
 

@@ -14,6 +14,7 @@ from src.DeepGenerativeModels.Week2.flow_mine import (
 
 from .utils import (
     _get_decoder,
+    _get_flow_decoder,
     _get_encoder,
     _get_mask_tranformations,
     _get_mnist,
@@ -64,7 +65,8 @@ if __name__ == "__main__":
     # Loading binarized MNIST with given batch_size.
     mnist_train_loader, mnist_test_loader = _get_mnist(path=dir_name,
                                                        batch_size=args.batch_size,
-                                                       binarized=False)
+                                                       binarized=True,
+                                                       prior=args.prior_type)
     # Define prior distribution
     M = args.latent_dim
     
@@ -80,7 +82,9 @@ if __name__ == "__main__":
         prior = MoGPrior(M, args.batch_size, args.device)
         
     elif args.prior_type == 'flow':
-        base, transformations = _get_mask_tranformations(M)
+        D = M #next(iter(mnist_train_loader))[0].shape[1] # 28*28
+        print(f"D: {D}")
+        base, transformations = _get_mask_tranformations(D)
         prior = Flow(base, transformations).to(device)
         
 
@@ -104,9 +108,14 @@ if __name__ == "__main__":
         # Generate samples
         model.eval()
         with torch.no_grad():
-            samples = (model.sample(64)).cpu() 
-            save_image(samples.view(64, 1, 28, 28),
-                       dir_name+args.prior_type+'_samples.png')
+            if model.prior.__class__.__name__ == 'Flow':
+                samples = (model.sample(64)).cpu() 
+                save_image(samples.view(64, 1, 28, 28),
+                        dir_name+args.prior_type+'_samples.png')
+            else:
+                samples = (model.sample(64)).cpu() 
+                save_image(samples.view(64, 1, 28, 28),
+                        dir_name+args.prior_type+'_samples.png')
         
         n_samples = 1000
         

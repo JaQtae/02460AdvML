@@ -40,7 +40,7 @@ class GaussianPrior(nn.Module):
     
 class MoGPrior(nn.Module):
 
-    def __init__(self, M, num_components, device = 'cpu'):
+    def __init__(self, M, num_components, device = 'cpu', init_radius: float = 4.0):
         """
         Define a Mixture of Gaussian (MoG) prior distribution.
 
@@ -50,14 +50,22 @@ class MoGPrior(nn.Module):
         """
         super(MoGPrior, self).__init__()
         self.M = M
-        self.device = device
         self.num_components = num_components
-        self.mean = nn.Parameter(torch.zeros(num_components, M), requires_grad=False).to(self.device)
+        self.device = device
+        self.init_radius = init_radius
+        
+        # init_radius ensures it never diverges outside of bounds given
+        self.mean = nn.Parameter(torch.randn(self.num_components, self.M).uniform_(-self.init_radius, self.init_radius), requires_grad=False).to(self.device)
         self.logvars = nn.Parameter(torch.ones(num_components, M), requires_grad=False).to(self.device)
+        #self.stds = nn.Parameter(1 + abs(torch.randn(self.num_components, self.M)), requires_grad = True)
+        
+        self.weights = nn.Parameter(torch.ones(self.num_components), requires_grad=True)
 
     def forward(self):
         # https://github.com/pytorch/pytorch/blob/main/torch/distributions/mixture_same_family.py
-        mixture_dist = td.Categorical(torch.ones(self.num_components,).to(self.device))
+        
+        # Mixing probabilities
+        mixture_dist = td.Categorical(probs=F.softmax(self.weights, dim=0))
         comp_dist = td.Independent(td.Normal(loc=self.mean, scale=torch.exp(self.logvars)), 1)
         return td.MixtureSameFamily(mixture_dist, comp_dist)
     
@@ -151,15 +159,14 @@ class VAE(nn.Module):
            A tensor of dimension `(batch_size, feature_dim1, feature_dim2, ...)`
         """
         q = self.encoder(x)
-        z = q.rsample()
+        z = q.rsample() # [batch, latent_dim]
+    
         if self.prior.__class__.__name__ == "GaussianPrior":
             elbo = torch.mean(self.decoder(z).log_prob(x) - td.kl_divergence(q, self.prior()), dim=0)
-        #elif self.prior.__class__.__name__ == "MoGPrior":
         else:
             # non-Gaussian prior (e.g. MoGPrior and Flow-based prior)
             regularization_term = q.log_prob(z) - self.prior.log_prob(z) # Uses the inverse
             elbo = torch.mean(self.decoder(z).log_prob(x) - regularization_term, dim=0)
-
                
         return elbo
 

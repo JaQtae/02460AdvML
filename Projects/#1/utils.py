@@ -42,6 +42,17 @@ def _get_decoder(M: int):
     )
     return decoder_net
 
+def _get_flow_decoder(M: int):
+    decoder_net = nn.Sequential(
+        nn.Linear(M, 512),
+        nn.ReLU(),
+        nn.Linear(512, 512),
+        nn.ReLU(),
+        nn.Linear(512, 784),
+        #nn.Unflatten(-1, (28, 28))
+    )
+    return decoder_net
+
 def _get_mask_tranformations(D_: int):
     """
     Generates the masking transformation based on some dimension D.
@@ -50,7 +61,7 @@ def _get_mask_tranformations(D_: int):
         base: Base Gaussian distribution.
         transformations: list of the required masks.
     """
-    D = D_
+    D = D_ # 784
     base = GaussianBase(D)
 
     # Define transformations
@@ -62,16 +73,11 @@ def _get_mask_tranformations(D_: int):
     mask = torch.zeros((D,))
     mask[D//2:] = 1
     
-    # for i in range(num_transformations):
-    #     mask = (1-mask) # Flip the mask
-    #     scale_net = nn.Sequential(nn.Linear(D, num_hidden), nn.ReLU(), nn.Linear(num_hidden, D))
-    #     translation_net = nn.Sequential(nn.Linear(D, num_hidden), nn.ReLU(), nn.Linear(num_hidden, D))
-    #     transformations.append(MaskedCouplingLayer(scale_net, translation_net, mask))
     for i in range(num_transformations):
         mask = (1-mask) # Flip the mask
-        scale_net = nn.Sequential(nn.Linear(D, D//2), nn.ReLU(), nn.Linear(D//2, 2*num_hidden), nn.ReLU(), nn.Linear(2*num_hidden, num_hidden), nn.ReLU(), nn.Linear(num_hidden, D), nn.Tanh())
-        translation_net = nn.Sequential(nn.Linear(D, D//2), nn.ReLU(), nn.Linear(D//2, 2*num_hidden), nn.ReLU(), nn.Linear(2*num_hidden, num_hidden), nn.ReLU(), nn.Linear(num_hidden, D))
-        transformations.append(MaskedCouplingLayer(scale_net, translation_net, mask))   
+        scale_net = nn.Sequential(nn.Linear(D, num_hidden), nn.ReLU(), nn.Linear(num_hidden, D))
+        translation_net = nn.Sequential(nn.Linear(D, num_hidden), nn.ReLU(), nn.Linear(num_hidden, D))
+        transformations.append(MaskedCouplingLayer(scale_net, translation_net, mask))
         
     return base, transformations
 

@@ -68,8 +68,6 @@ class MaskedCouplingLayer(nn.Module):
             The sum of the log determinants of the Jacobian matrices of the forward transformations of dimension `(batch_size, feature_dim)`.
         """
         x = z
-        print(f"mask shape: {self.mask.shape}")
-        print(f"x shape: {x.shape}")
         z_prime = self.mask * x + (1 - self.mask) * ( x * torch.exp(self.scale_net(self.mask * x)) + self.translation_net(self.mask * x) )
         log_det_J = torch.sum( ( 1 - self.mask) * self.scale_net( self.mask * z_prime), dim=-1)
         return z_prime, log_det_J
@@ -162,7 +160,7 @@ class Flow(nn.Module):
         log_prob: [torch.Tensor]
             The log probability of the data under the flow.
         """
-        z, log_det_J = self.inverse(x)
+        z, log_det_J = self.inverse(x) # [b, 28x28]
         return self.base().log_prob(z) + log_det_J
     
     def sample(self, sample_shape=(1,)):

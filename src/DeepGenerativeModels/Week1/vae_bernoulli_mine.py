@@ -53,7 +53,7 @@ class MoGPrior(nn.Module):
         self.device = device
         self.num_components = num_components
         self.mean = nn.Parameter(torch.zeros(num_components, M), requires_grad=False).to(self.device)
-        self.logvars = nn.Parameter(torch.zeros(num_components, M), requires_grad=False).to(self.device)
+        self.logvars = nn.Parameter(torch.ones(num_components, M), requires_grad=False).to(self.device)
 
     def forward(self):
         # https://github.com/pytorch/pytorch/blob/main/torch/distributions/mixture_same_family.py
@@ -113,7 +113,7 @@ class BernoulliDecoder(nn.Module):
            A tensor of dimension `(batch_size, M)`, where M is the dimension of the latent space.
         """
         logits = self.decoder_net(z)
-        return td.Independent(td.Bernoulli(logits=logits), 2)
+        return td.Independent(td.Bernoulli(logits=logits, validate_args=False), 2)
 
 
 

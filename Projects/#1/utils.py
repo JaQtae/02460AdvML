@@ -42,7 +42,7 @@ def _get_decoder(M: int):
     )
     return decoder_net
 
-def _get_mask_tranformations(dim: int):
+def _get_mask_tranformations(D_: int):
     """
     Generates the masking transformation based on some dimension D.
     
@@ -50,7 +50,7 @@ def _get_mask_tranformations(dim: int):
         base: Base Gaussian distribution.
         transformations: list of the required masks.
     """
-    D = dim
+    D = D_
     base = GaussianBase(D)
 
     # Define transformations
@@ -62,15 +62,20 @@ def _get_mask_tranformations(dim: int):
     mask = torch.zeros((D,))
     mask[D//2:] = 1
     
+    # for i in range(num_transformations):
+    #     mask = (1-mask) # Flip the mask
+    #     scale_net = nn.Sequential(nn.Linear(D, num_hidden), nn.ReLU(), nn.Linear(num_hidden, D))
+    #     translation_net = nn.Sequential(nn.Linear(D, num_hidden), nn.ReLU(), nn.Linear(num_hidden, D))
+    #     transformations.append(MaskedCouplingLayer(scale_net, translation_net, mask))
     for i in range(num_transformations):
         mask = (1-mask) # Flip the mask
-        scale_net = nn.Sequential(nn.Linear(D, num_hidden), nn.ReLU(), nn.Linear(num_hidden, D))
-        translation_net = nn.Sequential(nn.Linear(D, num_hidden), nn.ReLU(), nn.Linear(num_hidden, D))
-        transformations.append(MaskedCouplingLayer(scale_net, translation_net, mask))
+        scale_net = nn.Sequential(nn.Linear(D, D//2), nn.ReLU(), nn.Linear(D//2, 2*num_hidden), nn.ReLU(), nn.Linear(2*num_hidden, num_hidden), nn.ReLU(), nn.Linear(num_hidden, D), nn.Tanh())
+        translation_net = nn.Sequential(nn.Linear(D, D//2), nn.ReLU(), nn.Linear(D//2, 2*num_hidden), nn.ReLU(), nn.Linear(2*num_hidden, num_hidden), nn.ReLU(), nn.Linear(num_hidden, D))
+        transformations.append(MaskedCouplingLayer(scale_net, translation_net, mask))   
         
     return base, transformations
 
-def _get_mnist(path: str, batch_size: int, binarized: bool):
+def _get_mnist(path: str, batch_size: int, binarized: bool, prior: str):
     """
     Gives you back the binarized MNIST dataset in batches of <batch_size>. 
     Saves the data to <dir-name>/data/*.
@@ -78,12 +83,22 @@ def _get_mnist(path: str, batch_size: int, binarized: bool):
     if binarized:
     # Load MNIST as binarized at 'threshhold' and create data loaders
         threshold = 0.5
-        mnist_train_loader = DataLoader(datasets.MNIST(path+'data/', train=True, download=True,
+        if prior == 'flow':
+            # Flow-based prior requires us to flatten the data...
+            mnist_train_loader = DataLoader(datasets.MNIST(path+'data/', train=True, download=True,
+                                                                            transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: (threshold < x).float().squeeze()),  transforms.Lambda(lambda x: x.flatten())])),
+                                                            batch_size=batch_size, shuffle=True)
+            mnist_test_loader = DataLoader(datasets.MNIST(path+'data/', train=False, download=True,
+                                                                        transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: (threshold < x).float().squeeze()),  transforms.Lambda(lambda x: x.flatten())])),
+                                                            batch_size=batch_size, shuffle=False)
+        else:
+            mnist_train_loader = DataLoader(datasets.MNIST(path+'data/', train=True, download=True,
+                                                                            transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: (threshold < x).float().squeeze())])),
+                                                            batch_size=batch_size, shuffle=True)
+            mnist_test_loader = DataLoader(datasets.MNIST(path+'data/', train=False, download=True,
                                                                         transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: (threshold < x).float().squeeze())])),
-                                                        batch_size=batch_size, shuffle=True)
-        mnist_test_loader = DataLoader(datasets.MNIST(path+'data/', train=False, download=True,
-                                                                    transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: (threshold < x).float().squeeze())])),
-                                                        batch_size=batch_size, shuffle=False)
+                                                            batch_size=batch_size, shuffle=False)
+        
     else: 
         mnist_train_loader = DataLoader(datasets.MNIST(path+'data/', train=True, download=True,
                                                                     transform=transforms.Compose([transforms.ToTensor (), transforms.Lambda(lambda x: x.squeeze ())])),
@@ -91,6 +106,7 @@ def _get_mnist(path: str, batch_size: int, binarized: bool):
         mnist_test_loader = DataLoader(datasets.MNIST(path+'data/', train=False, download=True,
                                                                 transform=transforms.Compose([transforms.ToTensor (), transforms.Lambda(lambda x: x.squeeze ())])),
                                                     batch_size=batch_size, shuffle=False)
+
     return mnist_train_loader, mnist_test_loader
 
     
@@ -112,7 +128,6 @@ def plot_prior_and_aggr_posterior_2d(model, data_loader, latent_dim, n_samples, 
             x = x.to(device)
             target = target.to(device)
             q = model.encoder(x)
-
             z = q.sample()  # [batch_size, latent_dim]
             post_samples = torch.cat((post_samples, z), dim=0)
             targets = torch.cat((targets, target), dim=0)

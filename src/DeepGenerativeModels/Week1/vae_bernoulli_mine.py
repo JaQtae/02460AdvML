@@ -56,8 +56,8 @@ class MoGPrior(nn.Module):
         
         # init_radius ensures it never diverges outside of bounds given
         self.mean = nn.Parameter(torch.randn(self.num_components, self.M).uniform_(-self.init_radius, self.init_radius), requires_grad=False).to(self.device)
-        self.logvars = nn.Parameter(torch.ones(num_components, M), requires_grad=False).to(self.device)
-        #self.stds = nn.Parameter(1 + abs(torch.randn(self.num_components, self.M)), requires_grad = True)
+        #self.logvars = nn.Parameter(torch.ones(self.num_components, self.M), requires_grad=False).to(self.device)
+        self.stds = nn.Parameter(1 + abs(torch.randn(self.num_components, self.M)), requires_grad = True)
         
         self.weights = nn.Parameter(torch.ones(self.num_components), requires_grad=True)
 
@@ -66,7 +66,7 @@ class MoGPrior(nn.Module):
         
         # Mixing probabilities
         mixture_dist = td.Categorical(probs=F.softmax(self.weights, dim=0))
-        comp_dist = td.Independent(td.Normal(loc=self.mean, scale=torch.exp(self.logvars)), 1)
+        comp_dist = td.Independent(td.Normal(loc=self.mean, scale=self.stds), 1)
         return td.MixtureSameFamily(mixture_dist, comp_dist)
     
     def log_prob(self, z):
@@ -99,6 +99,9 @@ class GaussianEncoder(nn.Module):
         """
         mean, std = torch.chunk(self.encoder_net(x), 2, dim=-1)
         return td.Independent(td.Normal(loc=mean, scale=torch.exp(std)), 1)
+    
+    def log_prob(self, x):
+        return self.forward(x).log_prob()
 
 
 class BernoulliDecoder(nn.Module):

@@ -72,7 +72,12 @@ if __name__ == "__main__":
     
     # Define the encoder and decoder networks
     encoder_net = _get_encoder(M)
-    decoder_net = _get_decoder(M)
+    
+    if args.prior_type == 'flow':
+        # Needs to not be unflattened, as we deal with flattened data.
+        decoder_net = _get_flow_decoder(M)
+    else:
+        decoder_net = _get_decoder(M)
     
     # Choose which prior to use in the VAE.
     if args.prior_type == 'sg':
@@ -82,8 +87,7 @@ if __name__ == "__main__":
         prior = MoGPrior(M, args.batch_size, args.device)
         
     elif args.prior_type == 'flow':
-        D = M #next(iter(mnist_train_loader))[0].shape[1] # 28*28
-        print(f"D: {D}")
+        D = M # This is 2. We are masking in the latent space of the VAE and prior.
         base, transformations = _get_mask_tranformations(D)
         prior = Flow(base, transformations).to(device)
         
@@ -108,14 +112,9 @@ if __name__ == "__main__":
         # Generate samples
         model.eval()
         with torch.no_grad():
-            if model.prior.__class__.__name__ == 'Flow':
-                samples = (model.sample(64)).cpu() 
-                save_image(samples.view(64, 1, 28, 28),
-                        dir_name+args.prior_type+'_samples.png')
-            else:
-                samples = (model.sample(64)).cpu() 
-                save_image(samples.view(64, 1, 28, 28),
-                        dir_name+args.prior_type+'_samples.png')
+            samples = (model.sample(64)).cpu() 
+            save_image(samples.view(64, 1, 28, 28),
+                    dir_name+args.prior_type+'_samples.png')
         
         n_samples = 1000
         

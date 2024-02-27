@@ -119,12 +119,12 @@ def _get_mnist(path: str, batch_size: int, binarized: bool, prior: str):
 
 def plot_prior_and_aggr_posterior_2d(model, data_loader, latent_dim, n_samples, device): 
     # Define a grid for the latent space
-    x = torch.linspace(-7, 7, 100).to(device)
-    y = torch.linspace(-7, 7, 100).to(device)
+    model.eval()
+    x = torch.linspace(-18, 18, 100).to(device)
+    y = torch.linspace(-20, 20, 100).to(device)
     xx, yy = torch.meshgrid(x, y)
 
     # Evaluate the prior log probability on the grid
-    prior_log_prob = model.prior().log_prob(torch.stack([xx, yy], dim=-1)).view(100, 100).cpu().numpy()
 
     # Collect posterior samples
     post_samples = torch.empty((0, latent_dim)).to(device)
@@ -138,15 +138,15 @@ def plot_prior_and_aggr_posterior_2d(model, data_loader, latent_dim, n_samples, 
             post_samples = torch.cat((post_samples, z), dim=0)
             targets = torch.cat((targets, target), dim=0)
 
-    # Plot the prior contour
-    plt.contourf(xx.cpu().numpy(), yy.cpu().numpy(), prior_log_prob, cmap='viridis')
-    # Plot the projected posterior samples
-    plt.scatter(post_samples[:n_samples, 0].cpu().numpy(), post_samples[:n_samples, 1].cpu().numpy(), c=targets[:n_samples].cpu().numpy(), cmap='tab10')
-    plt.colorbar()
-    # Add labels and title
-    plt.title("Prior Contour and Posterior Samples")
+        prior_log_prob = model.prior().log_prob(torch.stack([xx, yy], dim=-1)).view(100, 100).cpu().numpy()
 
-    # Show the plot
-    plt.show()
+        # Plot the prior contour
+        plt.contourf(xx.cpu().numpy(), yy.cpu().numpy(), prior_log_prob, cmap='viridis', alpha=0.4)
+        # Plot the projected posterior samples
+        plt.scatter(post_samples[:n_samples, 0].cpu().numpy(), post_samples[:n_samples, 1].cpu().numpy(), c=targets[:n_samples].cpu().numpy(), cmap='tab10')
+        plt.colorbar()
+        plt.savefig(f"{model.prior.__class__.__name__}.png")
+        # Show the plot
+        plt.show()
     
 

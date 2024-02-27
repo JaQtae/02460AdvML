@@ -71,7 +71,7 @@ class MaskedCouplingLayer(nn.Module):
         print(f"mask shape: {self.mask.shape}")
         print(f"x shape: {x.shape}")
         z_prime = self.mask * x + (1 - self.mask) * ( x * torch.exp(self.scale_net(self.mask * x)) + self.translation_net(self.mask * x) )
-        log_det_J = torch.sum( ( 1 - self.mask) * self.scale_net( self.mask * x), dim=-1)
+        log_det_J = torch.sum( ( 1 - self.mask) * self.scale_net( self.mask * z_prime), dim=-1)
         return z_prime, log_det_J
     
     def inverse(self, x):
@@ -91,7 +91,7 @@ class MaskedCouplingLayer(nn.Module):
         # Eq. 
         z = self.mask * z + (1 - self.mask) * ( (z - self.translation_net(self.mask * z)) * torch.exp( - self.scale_net(self.mask * z)) )
         # It is just the inverse of the number we already computed in the forward call. (??)
-        log_det_J = - torch.sum( ( 1 - self.mask) * self.scale_net( self.mask * z), dim=-1)
+        log_det_J = - torch.sum( ( 1 - self.mask) * self.scale_net( self.mask * x), dim=-1)
         return z, log_det_J
 
 

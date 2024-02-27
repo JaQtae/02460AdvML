@@ -64,7 +64,7 @@ if __name__ == "__main__":
     # Loading binarized MNIST with given batch_size.
     mnist_train_loader, mnist_test_loader = _get_mnist(path=dir_name,
                                                        batch_size=args.batch_size,
-                                                       binarized=True)
+                                                       binarized=False)
     # Define prior distribution
     M = args.latent_dim
     

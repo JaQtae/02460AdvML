@@ -181,7 +181,7 @@ class VAE(nn.Module):
         n_samples: [int]
            Number of samples to generate.
         """
-        z = self.prior().sample(torch.Size([n_samples]))
+        z = self.prior.sample(torch.Size([n_samples]))
         return self.decoder(z).sample()
     
     def forward(self, x):

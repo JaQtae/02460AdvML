@@ -65,19 +65,19 @@ if __name__ == "__main__":
     # Loading binarized MNIST with given batch_size.
     mnist_train_loader, mnist_test_loader = _get_mnist(path=dir_name,
                                                        batch_size=args.batch_size,
-                                                       binarized=True,
-                                                       prior=args.prior_type)
+                                                       binarized=True, prior=None)
+                                                       #prior=args.prior_type)
     # Define prior distribution
     M = args.latent_dim
     
     # Define the encoder and decoder networks
     encoder_net = _get_encoder(M)
     
-    if args.prior_type == 'flow':
-        # Needs to not be unflattened, as we deal with flattened data.
-        decoder_net = _get_flow_decoder(M)
-    else:
-        decoder_net = _get_decoder(M)
+    # if args.prior_type == 'flow':
+    #     #Needs to not be unflattened, as we deal with flattened data.
+    #     decoder_net = _get_flow_decoder(M)
+    # else:
+    decoder_net = _get_decoder(M)
     
     # Choose which prior to use in the VAE.
     if args.prior_type == 'sg':
@@ -112,13 +112,13 @@ if __name__ == "__main__":
         # Generate samples
         model.eval()
         with torch.no_grad():
-            samples = (model.sample(64)).cpu() 
-            save_image(samples.view(64, 1, 28, 28),
-                    dir_name+args.prior_type+'_samples.png')
+            # samples = (model.sample(64)).cpu() 
+            # save_image(samples.view(64, 1, 28, 28),
+            #          dir_name+args.prior_type+'_samples.png')
         
-        n_samples = 1000
+            n_samples = 1000
         
-        plot_prior_and_aggr_posterior_2d(model, mnist_test_loader, args.latent_dim, n_samples, args.device)
+            plot_prior_and_aggr_posterior_2d(model, mnist_test_loader, args.latent_dim, n_samples, args.device)
         
     elif args.mode == 'eval':
         model.load_state_dict(torch.load(dir_name+args.model, map_location=torch.device(args.device)))

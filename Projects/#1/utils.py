@@ -42,16 +42,6 @@ def _get_decoder(M: int):
     )
     return decoder_net
 
-def _get_flow_decoder(M: int):
-    decoder_net = nn.Sequential(
-        nn.Linear(M, 512),
-        nn.ReLU(),
-        nn.Linear(512, 512),
-        nn.ReLU(),
-        nn.Linear(512, 784),
-        #nn.Unflatten(-1, (28, 28))
-    )
-    return decoder_net
 
 def _get_mask_tranformations(D_: int):
     """
@@ -81,7 +71,7 @@ def _get_mask_tranformations(D_: int):
         
     return base, transformations
 
-def _get_mnist(path: str, batch_size: int, binarized: bool, prior: str):
+def _get_mnist(path: str, batch_size: int, binarized: bool): #, prior: str):
     """
     Gives you back the binarized MNIST dataset in batches of <batch_size>. 
     Saves the data to <dir-name>/data/*.
@@ -89,21 +79,13 @@ def _get_mnist(path: str, batch_size: int, binarized: bool, prior: str):
     if binarized:
     # Load MNIST as binarized at 'threshhold' and create data loaders
         threshold = 0.5
-        if prior == 'flow':
-            # Flow-based prior requires us to flatten the data...
-            mnist_train_loader = DataLoader(datasets.MNIST(path+'data/', train=True, download=True,
-                                                                            transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: (threshold < x).float().squeeze()),  transforms.Lambda(lambda x: x.flatten())])),
-                                                            batch_size=batch_size, shuffle=True)
-            mnist_test_loader = DataLoader(datasets.MNIST(path+'data/', train=False, download=True,
-                                                                        transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: (threshold < x).float().squeeze()),  transforms.Lambda(lambda x: x.flatten())])),
-                                                            batch_size=batch_size, shuffle=False)
-        else:
-            mnist_train_loader = DataLoader(datasets.MNIST(path+'data/', train=True, download=True,
-                                                                            transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: (threshold < x).float().squeeze())])),
-                                                            batch_size=batch_size, shuffle=True)
-            mnist_test_loader = DataLoader(datasets.MNIST(path+'data/', train=False, download=True,
+
+        mnist_train_loader = DataLoader(datasets.MNIST(path+'data/', train=True, download=True,
                                                                         transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: (threshold < x).float().squeeze())])),
-                                                            batch_size=batch_size, shuffle=False)
+                                                        batch_size=batch_size, shuffle=True)
+        mnist_test_loader = DataLoader(datasets.MNIST(path+'data/', train=False, download=True,
+                                                                    transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: (threshold < x).float().squeeze())])),
+                                                        batch_size=batch_size, shuffle=False)
         
     else: 
         mnist_train_loader = DataLoader(datasets.MNIST(path+'data/', train=True, download=True,
@@ -120,14 +102,15 @@ def _get_mnist(path: str, batch_size: int, binarized: bool, prior: str):
 def plot_prior_and_aggr_posterior_2d(model, data_loader, latent_dim, n_samples, device): 
     # Define a grid for the latent space
     model.eval()
-    x = torch.linspace(-18, 18, 100).to(device)
-    y = torch.linspace(-20, 20, 100).to(device)
-    xx, yy = torch.meshgrid(x, y)
+    # x = torch.linspace(-2, 2, 100).to(device)
+    # y = torch.linspace(-2, 2, 100).to(device)
+    # xx, yy = torch.meshgrid(x, y)
 
     # Evaluate the prior log probability on the grid
 
     # Collect posterior samples
     post_samples = torch.empty((0, latent_dim)).to(device)
+    prior_samples = torch.empty((0, latent_dim)).to(device)
     targets = torch.empty((0)).to(device)
     with torch.no_grad():
         for x, target in tqdm(data_loader):
@@ -135,18 +118,42 @@ def plot_prior_and_aggr_posterior_2d(model, data_loader, latent_dim, n_samples, 
             target = target.to(device)
             q = model.encoder(x)
             z = q.sample()  # [batch_size, latent_dim]
+
+            p_ = model.prior.sample(torch.Size([len(x)]))
+
+            
             post_samples = torch.cat((post_samples, z), dim=0)
             targets = torch.cat((targets, target), dim=0)
+            prior_samples = torch.cat((prior_samples, p_))
+        #prior_log_prob = model.prior.log_prob(torch.stack([xx, yy], dim=-1)).view(100, 100).cpu().numpy()
+        
+        prior_samples = model.prior.sample(torch.Size([1000]))
+        print(prior_samples.shape)
+        print(post_samples.shape)
+        print(f"Number of nans in prior: {torch.sum(prior_samples.isnan()==True)}")
+        print(f"Number of nans in posterior: {torch.sum(post_samples.isnan()==True)}")
+        
+        # Create a 2D histogram for prior samples
+        plt.hist2d(prior_samples[:, 0].cpu().numpy(), prior_samples[:, 1].cpu().numpy(), bins=50, cmap='Blues', density=True, alpha=0.5, label='Prior')
 
-        prior_log_prob = model.prior().log_prob(torch.stack([xx, yy], dim=-1)).view(100, 100).cpu().numpy()
+        # Create a 2D histogram for posterior samples
+        plt.hist2d(post_samples[:, 0].cpu().numpy(), post_samples[:, 1].cpu().numpy(), bins=50, cmap='Reds', density=True, alpha=0.5, label='Posterior')
 
-        # Plot the prior contour
-        plt.contourf(xx.cpu().numpy(), yy.cpu().numpy(), prior_log_prob, cmap='viridis', alpha=0.4)
-        # Plot the projected posterior samples
-        plt.scatter(post_samples[:n_samples, 0].cpu().numpy(), post_samples[:n_samples, 1].cpu().numpy(), c=targets[:n_samples].cpu().numpy(), cmap='tab10')
-        plt.colorbar()
-        plt.savefig(f"{model.prior.__class__.__name__}.png")
-        # Show the plot
+        plt.colorbar()  # Add colorbar for density scale
+        plt.legend()
+        plt.xlabel('Latent Dimension 1')
+        plt.ylabel('Latent Dimension 2')
+        plt.title('Density of Prior and Posterior Samples')
         plt.show()
+                
+        
+        # # Plot the prior contour
+        # plt.contourf(xx.cpu().numpy(), yy.cpu().numpy(), prior_log_prob, cmap='viridis', alpha=0.4)
+        # # Plot the projected posterior samples
+        # plt.scatter(post_samples[:n_samples, 0].cpu().numpy(), post_samples[:n_samples, 1].cpu().numpy(), c=targets[:n_samples].cpu().numpy(), cmap='tab10')
+        # plt.colorbar()
+        # plt.savefig(f"{model.prior.__class__.__name__}.png")
+        # # Show the plot
+        # plt.show()
     
 

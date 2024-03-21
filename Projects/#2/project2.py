@@ -10,6 +10,7 @@ import torch.distributions as td
 from torch.distributions.kl import kl_divergence as KL
 import torch.utils.data
 from tqdm import tqdm
+from torch.optim import LBFGS
 
 
 class GaussianPrior(nn.Module):
@@ -206,6 +207,42 @@ def proximity(curve_points, latent):
     pd_min_max = pd_min.max()
     return pd_min_max
 
+### TODO: Geodesic function ( this is basicly straight lines or third-order polynomials? )
+import torch
+import torch.distributions as td
+
+def piecewise_curve(c0, c1, degree=1, num_points: int = 10):
+    """
+    Degree = 1: Linearly interpolates between these points using the parameter values provided.
+    Degree = 3: Third-order polynomial interpolation.
+    """
+    t_values = torch.linspace(0, 1, num_points)
+    
+    if degree == 1:  # Linear interpolation
+        curve_points = (1 - t_values[:, None]) * c0 + t_values[:, None] * c1
+    elif degree == 3:  # Third-order polynomial interpolation
+        curve_points = (1 - t_values[:, None])**3 * c0 \
+                       + 3 * (1 - t_values[:, None])**2 * t_values[:, None] * c0 \
+                       + 3 * (1 - t_values[:, None]) * t_values[:, None]**2 * c1 \
+                       + t_values[:, None]**3 * c1
+    else:
+        raise ValueError("Degree not supported")
+    
+    return curve_points
+
+def fr_energy(
+    model, curve_points
+):
+    """ Fisher-Rao metric """
+    energy = torch.tensor([0., 0.])
+    num_points = curve_points.size(0)
+    for i in range(num_points - 1):
+        z0 = curve_points[i]
+        z1 = curve_points[i + 1]
+        energy += td.kl.kl_divergence(model.decoder(z0), model.decoder(z1)).item()
+    return energy
+
+
 
 if __name__ == "__main__":
     from torchvision import datasets, transforms
@@ -289,7 +326,6 @@ if __name__ == "__main__":
 
     elif args.mode == 'plot':
         import matplotlib.pyplot as plt
-
         ## Load trained model
         model.load_state_dict(torch.load(args.model, map_location=torch.device(args.device)))
         model.eval()
@@ -316,9 +352,38 @@ if __name__ == "__main__":
         for k in range(num_curves):
             i = curve_indices[k, 0]
             j = curve_indices[k, 1]
-            z0 = latents[i]
+            z0 = latents[i] # is a mean
             z1 = latents[j]
+            
             # TODO: Compute, and plot geodesic between z0 and z1
+            c = piecewise_curve(z0, z1, num_points=10) # 2 x num_points [[c0_x, c0_y], [c1_x, c1_y], ..., [cN_x, cN_y]]
+            initial_params = c[1:9] + torch.randn_like(c[1:9]) * 1e-5
+            # remove start/end and clone it? Perturb it w noise possibly!
+            print(f"points along z0->z1 given curve c:{c}") 
+            print(f"init params:{initial_params}") 
+            
+            # TODO: Minimize energy of each curve.
+            def closure():
+                optimizer.zero_grad()
+                energy = fr_energy(model=model,
+                                   curve_points=initial_params)[0] # They give us [E, E], we just need one?
+                energy.requires_grad = True
+                print(f"Energy: {energy.item():.5f}")
+                energy.backward()
+                return energy
+            
+            optimizer = LBFGS([initial_params], lr=.5) # Maybe strong_wolfe line_search. Check documentation... (default = None)
+            
+            for _ in range(10):  # Perform multiple steps to ensure optimization convergence
+                optimizer.step(closure)
+
+            
+            
+            #energy = fr_energy(model=model,
+            #                   curve_points=c)
+            #print(f"energy:{energy}")
+            
+
         
         plt.savefig(args.plot)
 

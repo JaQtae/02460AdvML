@@ -215,25 +215,28 @@ import torch.distributions as td
 def create_curve(c0, c1, N = 25, order = 1):
     # create line between c0 and c1
     # Rembember that c0 and c1 both are fixed points
-    t = torch.linspace(0, 1, N)
+    t = torch.linspace(0, 1, N-1)
     curve = (1 - t[:, None]) * c0 + t[:, None] * c1
     if order >= 2:
-        weights = torch.ones((N, 2, order - 1))
+        #weights = torch.rand((N, 2, order - 1))
+        weights = torch.cat((torch.linspace(start = 0, end = 1, steps = N//2)[:-1], torch.linspace(1, 0, N//2)))
+        weights = weights.view(N-1, 1, 1).repeat(1, 2, order - 1) 
+        weights = weights + (torch.randn_like(weights) * 0.05) 
         weights[0, :, :] = 0
-        weights[-1, :, :] = -torch.sum(weights[: -1, :], dim=0)
+        weights[-1, :, :] = 0 #-torch.sum(weights[: -1, :], dim=0)
         for i in range(2, order + 1):
             curve += weights[:, :, i - 2] * t[:, None]**i
 
     return curve, t, weights
 
 def update_curve(c0, c1, t, weights, order):
-    weights = weights.clone()
+    weights_update = weights.clone()
     # update curve
     curve = (1 - t[:, None]) * c0 + t[:, None] * c1
     for i in range(2, order + 1):
-        weights[0, :, :] = 0
-        weights[-1, :, :] = -torch.sum(weights[: -1, :], dim=0)
-        curve += weights[:, :, i - 2] * t[:, None]**i
+        weights_update[0, :, :] = 0
+        weights_update[-1, :, :] = 0 #-torch.sum(weights_update[: -1, :], dim=0)
+        curve += weights_update[:, :, i - 2] * t[:, None]**i
     return curve
 
 def fr_energy(
@@ -359,8 +362,9 @@ if __name__ == "__main__":
             z0 = latents[i] 
             z1 = latents[j]
 
-            order = 5
-            curve, t, weights = create_curve(z0, z1, N = 25, order = order) # 2 x num_points [[c0_x, c0_y], [c1_x, c1_y], ..., [cN_x, cN_y]]
+            order = 4
+            N = 30
+            curve, t, weights = create_curve(z0, z1, N = N, order = order) # 2 x num_points [[c0_x, c0_y], [c1_x, c1_y], ..., [cN_x, cN_y]]
             weights.requires_grad = True
             print(f"points along z0->z1 given curve c:{curve}") 
             print(f"init params:{weights}") 
@@ -377,10 +381,13 @@ if __name__ == "__main__":
             
             optimizer = LBFGS([weights], lr=1, line_search_fn='strong_wolfe') # line_search_fn='strong_wolfe'
             
-            for _ in range(2): 
+            for _ in range(10): 
                 optimizer.step(closure)
 
+            ax.scatter(z0[0], z0[1], c='r')
+            ax.scatter(z1[0], z1[1], c='r')
             ax.plot(curve[:, 0], curve[:, 1], 'r')
+            print(f"init params:{weights}") 
         
         plt.savefig(args.plot)
 

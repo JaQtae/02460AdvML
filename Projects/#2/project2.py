@@ -266,15 +266,30 @@ def fr_energy(
 def fr_energy_ensemble(
     model, c0, c1, t, weights, order):
     """ Model-average Fisher-Rao curve energy/metric """
+    import random
     curve = update_curve(c0, c1, t, weights, order)
     energy = torch.tensor([0.])
     num_points = curve.size(0)
+    
+    # TODO: Permuting the initial decoders, draw them uniformly (Monte Carlo?):
+    decoders_list = list(model.decoders)
+    random.shuffle(decoders_list)
+    permuted_decoders1 = nn.ModuleList(decoders_list)
+    random.shuffle(decoders_list)
+    permuted_decoders2 = nn.ModuleList(decoders_list)
+    
     for i in range(num_points - 1):
         z0 = curve[i]
         z1 = curve[i + 1]
-        for decoder in model.decoders:
-            decoder_energies += td.kl.kl_divergence(decoder(z0), decoder(z1))
-        energy += decoder_energies / len(model.num_decoders)  # Take average over ensemble
+        # TODO: Need to do some smart stuff that takes a random decoder, gives it a point and yada yada to mimmick MC
+        for k in range(len(permuted_decoders2)):
+            s = permuted_decoders1[k](z0)
+            ss = permuted_decoders2[k](z1)
+            
+        decoder_energies = td.kl.kl_divergence(s, ss) 
+        
+        energy += decoder_energies  / len(model.num_decoders) # Take average over ensemble
+        
     return energy
 
 import os

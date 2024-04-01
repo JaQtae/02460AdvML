@@ -95,7 +95,7 @@ class VAE(nn.Module):
     """
     Define a Variational Autoencoder (VAE) model.
     """
-    def __init__(self, prior, decoder, encoder):
+    def __init__(self, prior, decoder, encoder, num_decoders = 1):
         """
         Parameters:
         prior: [torch.nn.Module] 
@@ -110,6 +110,10 @@ class VAE(nn.Module):
         self.prior = prior
         self.decoder = decoder
         self.encoder = encoder
+        
+        # TODO: for part B
+        self.num_decoders = num_decoders
+        self.decoders = nn.ModuleList([decoder for _ in range(num_decoders)])
 
     def elbo(self, x):
         """
@@ -121,9 +125,17 @@ class VAE(nn.Module):
            n_samples: [int]
            Number of samples to use for the Monte Carlo estimate of the ELBO.
         """
+        # TODO: Probably has to take a certain index of decoders...
         q = self.encoder(x)
         z = q.rsample()
-        elbo = torch.mean(self.decoder(z).log_prob(x) - td.kl_divergence(q, self.prior()), dim=0)
+        
+        if self.num_decoders > 1:
+            chance = torch.randint(0, self.num_decoders-1, 1) # Choose random number to sample a decoder from all decoders
+            d = self.decoders[chance]
+            elbo = torch.mean(d(z).log_prob(x) - td.kl_divergence(q, self.prior()), dim=0)
+        else:
+            elbo = torch.mean(self.decoder(z).log_prob(x) - td.kl_divergence(q, self.prior()), dim=0)
+            
         return elbo
 
     def sample(self, n_samples=1):
@@ -204,7 +216,7 @@ def proximity(curve_points, latent):
     The function returns a scalar.
     """
     pd = torch.cdist(curve_points, latent)  # M x N
-    pd_min, _ = torch.min(pd, dim=0)
+    pd_min, _ = torch.min(pd, dim=1)
     pd_min_max = pd_min.max()
     return pd_min_max
 
@@ -223,7 +235,7 @@ def create_curve(c0, c1, N = 25, order = 1):
         weights = weights.view(N-1, 1, 1).repeat(1, 2, order - 1) 
         weights = weights + (torch.randn_like(weights) * 0.05) 
         weights[0, :, :] = 0
-        weights[-1, :, :] = 0 #-torch.sum(weights[: -1, :], dim=0)
+        weights[-1, :, :] = 0 # -torch.sum(weights[: -1, :], dim=0)
         for i in range(2, order + 1):
             curve += weights[:, :, i - 2] * t[:, None]**i
 
@@ -250,6 +262,23 @@ def fr_energy(
         z1 = curve[i + 1]
         energy += td.kl.kl_divergence(model.decoder(z0), model.decoder(z1))
     return energy
+
+def fr_energy_ensemble(
+    model, c0, c1, t, weights, order):
+    """ Model-average Fisher-Rao curve energy/metric """
+    curve = update_curve(c0, c1, t, weights, order)
+    energy = torch.tensor([0.])
+    num_points = curve.size(0)
+    for i in range(num_points - 1):
+        z0 = curve[i]
+        z1 = curve[i + 1]
+        for decoder in model.decoders:
+            decoder_energies += td.kl.kl_divergence(decoder(z0), decoder(z1))
+        energy += decoder_energies / len(model.num_decoders)  # Take average over ensemble
+    return energy
+
+import os
+dir_name = os.path.dirname(os.path.abspath(__file__)) + '/'
 
 if __name__ == "__main__":
     from torchvision import datasets, transforms
@@ -318,7 +347,7 @@ if __name__ == "__main__":
     # Define VAE model
     encoder = GaussianEncoder(encoder_net)
     decoder = BernoulliDecoder(new_decoder())
-    model = VAE(prior, decoder, encoder).to(device)
+    model = VAE(prior, decoder, encoder, num_decoders=10).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     
     # Choose mode to run
@@ -329,12 +358,12 @@ if __name__ == "__main__":
         train(model, optimizer, mnist_train_loader, args.epochs, args.device)
 
         # Save model
-        torch.save(model.state_dict(), args.model)
+        torch.save(model.state_dict(), dir_name+args.model)
 
     elif args.mode == 'plot':
         import matplotlib.pyplot as plt
         ## Load trained model
-        model.load_state_dict(torch.load(args.model, map_location=torch.device(args.device)))
+        model.load_state_dict(torch.load(dir_name+args.model, map_location=torch.device(args.device)))
         model.eval()
 
         ## Encode test and train data
@@ -354,7 +383,7 @@ if __name__ == "__main__":
             ax.scatter(latents[idx, 0], latents[idx, 1])
             
         ## Plot random geodesics
-        num_curves = 1
+        num_curves = 10
         curve_indices = torch.randint(num_train_data, (num_curves, 2))  # (num_curves) x 2
         for k in range(num_curves):
             i = curve_indices[k, 0]
@@ -379,7 +408,7 @@ if __name__ == "__main__":
                 energy.backward()
                 return energy
             
-            optimizer = LBFGS([weights], lr=1, line_search_fn='strong_wolfe') # line_search_fn='strong_wolfe'
+            optimizer = LBFGS([weights], lr=.8, line_search_fn='strong_wolfe') # line_search_fn='strong_wolfe'
             
             for _ in range(10): 
                 optimizer.step(closure)
@@ -389,5 +418,4 @@ if __name__ == "__main__":
             ax.plot(curve[:, 0], curve[:, 1], 'r')
             print(f"init params:{weights}") 
         
-        plt.savefig(args.plot)
-
+        plt.savefig(dir_name+args.plot)

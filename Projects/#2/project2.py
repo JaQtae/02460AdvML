@@ -12,6 +12,9 @@ import torch.utils.data
 from tqdm import tqdm
 from torch.optim import LBFGS
 import pdb
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import random
 
 
 class GaussianPrior(nn.Module):
@@ -225,11 +228,11 @@ import torch
 import torch.distributions as td
 
 def create_curve(c0, c1, N = 25, order = 1):
-    t = torch.linspace(0, 1, N-1)
+    t = torch.linspace(0, 1, N-1).to(c0.device)
     curve = (1 - t[:, None]) * c0 + t[:, None] * c1
     if order >= 2:
         #weights = torch.rand((N, 2, order - 1))
-        weights = torch.cat((torch.linspace(start = 0, end = 1, steps = N//2)[:-1], torch.linspace(1, 0, N//2)))
+        weights = torch.cat((torch.linspace(start = 0, end = 1, steps = N//2)[:-1], torch.linspace(1, 0, N//2))).to(c0.device)  
         weights = weights.view(N-1, 1, 1).repeat(1, 2, order - 1) 
         weights = weights + (torch.randn_like(weights) * 0.05) 
         weights[0, :, :] = 0
@@ -262,9 +265,8 @@ def fr_energy(model, c0, c1, t, weights, order):
 
 def fr_energy_ensemble(model, c0, c1, t, weights, order):
     """ Model-average Fisher-Rao curve energy/metric """
-    import random
     curve = update_curve(c0, c1, t, weights, order)
-    energy = torch.tensor([0.])
+    energy = torch.tensor([0.]).to(c0.device)
     num_points = curve.size(0)
     
     #decoders = model.decoders
@@ -274,24 +276,16 @@ def fr_energy_ensemble(model, c0, c1, t, weights, order):
     permuted_decoders1 = nn.ModuleList(decoders_list)
     random.shuffle(decoders_list)
     permuted_decoders2 = nn.ModuleList(decoders_list)
-    
-    #print(f"permuted decoders: {}")
-    
-    
+
     for i in range(num_points - 1):
         z0 = curve[i]
         z1 = curve[i + 1]
-        
-        # TODO: Need to do some smart stuff that takes a random decoder, gives it a point and yada yada to mimmick MC
-        # would require to use num_points as a batch dim kinda thing to do 10 calls instead of 100
-        for k in range(len(permuted_decoders2)):
-            s = permuted_decoders1[k](z0)
-            ss = permuted_decoders2[k](z1)
-        #for d in decoders:
-        energy += td.kl.kl_divergence(s, ss) / model.num_decoders # Take average over ensemble
-        
-        #energy += decoder_energies  / len(model.num_decoders) # Take average over ensemble
-        
+        for k in range(len(model.decoders)):
+            idx = random.sample(range(model.num_decoders), 2)
+            s = permuted_decoders1[idx[0]](z0)
+            ss = permuted_decoders2[idx[1]](z1)
+            energy += td.kl.kl_divergence(s, ss) 
+        energy /= len(model.decoders) # Take average over ensemble
     return energy
 
 import os
@@ -304,13 +298,14 @@ if __name__ == "__main__":
     # Parse arguments
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('mode', type=str, default='train', choices=['train', 'plot'], help='what to do when running the script (default: %(default)s)')
+    parser.add_argument('mode', type=str, default='train', choices=['train', 'plot', 'proximity'], help='what to do when running the script (default: %(default)s)')
     parser.add_argument('--model', type=str, default='model.pt', help='file to save model to or load model from (default: %(default)s)')
     parser.add_argument('--plot', type=str, default='plot.png', help='file to save latent plot in (default: %(default)s)')
     parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda', 'mps'], help='torch device (default: %(default)s)')
     parser.add_argument('--batch-size', type=int, default=32, metavar='N', help='batch size for training (default: %(default)s)')
     parser.add_argument('--epochs', type=int, default=15, metavar='N', help='number of epochs to train (default: %(default)s)')
     parser.add_argument('--latent-dim', type=int, default=2, metavar='N', help='dimension of latent variable (default: %(default)s)')
+    parser.add_argument('--n_ensemble', type=int, default=1, metavar='N', help='Number pf ensemble members: (default: %(default)s)')
 
     args = parser.parse_args()
     print('# Options')
@@ -364,7 +359,7 @@ if __name__ == "__main__":
     # Define VAE model
     encoder = GaussianEncoder(encoder_net)
     decoder = BernoulliDecoder(new_decoder())
-    model = VAE(prior, decoder, encoder, num_decoders=1).to(device)
+    model = VAE(prior, decoder, encoder, num_decoders=10).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     
     # Choose mode to run
@@ -378,67 +373,195 @@ if __name__ == "__main__":
         torch.save(model.state_dict(), dir_name+args.model)
 
     elif args.mode == 'plot':
-        import matplotlib.pyplot as plt
         ## Load trained model
         model.load_state_dict(torch.load(dir_name+args.model, map_location=torch.device(args.device)))
         model.eval()
+
+        # update number of decoders
+        model.decoders = model.decoders[:args.n_ensemble]
 
         ## Encode test and train data
         latents, labels = [], []
         with torch.no_grad():
             for x, y in mnist_train_loader:
-                z = model.encoder(x)
+                z = model.encoder(x.to(args.device))
                 latents.append(z.mean)
                 labels.append(y)
             latents = torch.concatenate(latents, dim=0)
             labels = torch.concatenate(labels, dim=0)
 
         ## Plot training data
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(dpi = 200)
         for k in range(num_classes):
             idx = labels == k
-            ax.scatter(latents[idx, 0], latents[idx, 1])
+            ax.scatter(latents[idx, 0].cpu(), latents[idx, 1].cpu(), alpha=0.5, s = 3)
             
+
         ## Plot random geodesics
-        num_curves = 50
-        curve_indices = torch.randint(num_train_data, (num_curves, 2))  # (num_curves) x 2
-        for k in range(num_curves):
+        if not os.path.exists(dir_name+'curve_indices.pt'):
+            num_curves = 50
+            curve_indices = torch.randint(num_train_data, (num_curves, 2))  # (num_curves) x 2
+            # save curve indices
+            torch.save(curve_indices, dir_name+'curve_indices.pt')
+        else:
+            curve_indices = torch.load(dir_name+'curve_indices.pt')
+            num_curves = curve_indices.size(0)
+
+        # colors for curves
+        unique_colors = list(mpl.colors.CSS4_COLORS.keys())  # List of available colors
+        random.shuffle(unique_colors)
+        color_idx = random.sample(range(num_curves), num_curves)
+
+        for k in tqdm(range(num_curves)):
             i = curve_indices[k, 0]
             j = curve_indices[k, 1]
             z0 = latents[i] 
             z1 = latents[j]
 
-            order = 4
-            N = 40
+            order = 3
+            N = 30
             curve, t, weights = create_curve(z0, z1, N = N, order = order) # 2 x num_points [[c0_x, c0_y], [c1_x, c1_y], ..., [cN_x, cN_y]]
+            #t = t[1:-1]
+            #weights = weights[1:-1, :, :]
             weights.requires_grad = True
             #print(f"points along z0->z1 given curve c:{curve}") 
             #print(f"init params:{weights}") 
             
-            # TODO: Minimize energy of each curve.
             def closure():
                 optimizer.zero_grad()
-                #energy = fr_energy(model, z0, z1, t, weights, order)
-                energy = fr_energy_ensemble(model, z0, z1, t, weights, order)
-                #energy.requires_grad = True
-                print(f"Energy: {energy}")
+                if len(model.decoders) > 1:
+                    energy = fr_energy_ensemble(model, z0, z1, t, weights, order)
+                else:
+                    energy = fr_energy(model, z0, z1, t, weights, order)
+
+                #print(f"Energy: {energy}")
                 energy.backward()
                 return energy
             
-            optimizer = LBFGS([weights], lr=.8, line_search_fn='strong_wolfe') # line_search_fn='strong_wolfe'
+            optimizer = LBFGS([weights], lr= 0.6, line_search_fn='strong_wolfe') # line_search_fn='strong_wolfe'
             
-            for _ in range(10): 
+            for _ in range(5): 
                 optimizer.step(closure)
 
-            ax.scatter(z0[0], z0[1], c='r')
-            ax.scatter(z1[0], z1[1], c='r')
-            ax.plot(curve[:, 0], curve[:, 1], 'r')
-            # import random
-            # import matplotlib as mpl
-            # unique_colors = list(mpl.colors.CSS4_COLORS.keys())  # List of available colors
-            # random.shuffle(unique_colors)
-            # selected_colors = unique_colors[:50]
-            # for i in range(len(curve)):
-            #     ax.plot(curve[i, 0], curve[i, 1], color=selected_colors[i])
+            ax.scatter(z0[0].cpu(), z0[1].cpu(), c=unique_colors[color_idx[k]])
+            ax.scatter(z1[0].cpu(), z1[1].cpu(), c=unique_colors[color_idx[k]])
+            ax.plot(curve[:, 0].cpu(), curve[:, 1].cpu(), unique_colors[color_idx[k]])
+            #pdb.set_trace()
+
+        # plot metrics
+        res = 100
+        limit = 8.5
+        epsilon = 1e-4
+        x = [-6, 7.5]
+        y = [-6, 6]
+        XX, YY = torch.meshgrid(torch.linspace(-limit, limit, res), torch.linspace(-limit, limit, res), indexing='ij')
+        MB = torch.vstack((YY.ravel(), XX.ravel())).T
+        MB = MB.to(args.device)
+
+        sigma = 0.25
+        cov = (torch.eye(2) * sigma**2).to(args.device)
+        N = num_train_data
+        p = torch.zeros(res, res).to(args.device)
+        for i in range(N):
+            p_x = td.MultivariateNormal(loc = latents[i], covariance_matrix = cov)
+            p += torch.exp(p_x.log_prob(MB)).view(res, res)
+        p /= N
+        G_x = 1 / (p + epsilon)
+        ax.imshow(G_x.cpu(), extent=(-limit, limit, -limit, limit), origin='lower', cmap = 'PuBu')
+        #pdb.set_trace()
+        # entropy = model.prior(MB).entropy()
+        # entropy = 1 / (entropy + epsilon)
+        # entropy = entropy.view(res, res)
+        # ax.imshow(entropy.detach().numpy(), extent=(-limit, limit, -limit, limit), origin='lower', alpha=0.5)
+        #plt.show()
+
+        #pdb.set_trace()
+        #ax.imshow(entropy.detach().numpy(), extent=(-limit, limit, -limit, limit), origin='lower', alpha=0.5)
+
+        #px = model.prior().log_prob(MB).exp().view(res, res)
+        #x = model.prior().sample(torch.Size([MB.size(0)]))
+        # model.decoder(model.prior().sample()).entropy() 
+        #ax.imshow(p, extent=(-limit, limit, -limit, limit), origin='lower', alpha=0.5)
+
+        #epsilon = 1e-6
+        #G_x = 1 / (p + epsilon)
+        #G_x = G_x / G_x.sum()
+
+        #ax.imshow(G_x, extent=(-limit, limit, -limit, limit), origin='lower', alpha=0.5)
+        fig.tight_layout()
         
         plt.savefig(dir_name+args.plot)
+
+    elif args.mode == 'proximity':
+        # Load trained model
+        model.load_state_dict(torch.load(dir_name+args.model, map_location=torch.device(args.device)))
+        model.eval()
+
+        ## Plot random geodesics
+        if not os.path.exists(dir_name+'curve_indices.pt'):
+            num_curves = 5
+            curve_indices = torch.randint(num_train_data, (num_curves, 2))  # (num_curves) x 2
+            # save curve indices
+            torch.save(curve_indices, dir_name+'curve_indices.pt')
+        else:
+            curve_indices = torch.load(dir_name+'curve_indices.pt')
+            num_curves = curve_indices.size(0)
+
+        num_curves = 5
+        curve_idx = random.sample(range(num_curves), num_curves)
+        curve_indices = curve_indices[curve_idx]
+        
+        print(f"num_curves: {num_curves}")
+        # Initialize proximity matrix
+        proximity_matrix = torch.zeros(num_curves, model.num_decoders)
+
+        # Loop over decoders
+        for n_decoder in range(model.num_decoders):        
+            # update model decoder
+            model.decoder = model.decoders[:n_decoder+1]
+            ## Encode test and train data
+            latents, labels = [], []
+            with torch.no_grad():
+                for x, y in mnist_train_loader:
+                    z = model.encoder(x.to(args.device))
+                    latents.append(z.mean)
+                    labels.append(y)
+                latents = torch.concatenate(latents, dim=0)
+                labels = torch.concatenate(labels, dim=0)
+
+            for k in tqdm(range(num_curves)):
+                i = curve_indices[k, 0]
+                j = curve_indices[k, 1]
+                z0 = latents[i] 
+                z1 = latents[j]
+
+                order = 3
+                N = 24
+                curve, t, weights = create_curve(z0, z1, N = N, order = order) # 2 x num_points [[c0_x, c0_y], [c1_x, c1_y], ..., [cN_x, cN_y]]
+                weights.requires_grad = True
+
+                def closure():
+                    optimizer.zero_grad()
+                    if len(model.decoders) > 1:
+                        energy = fr_energy_ensemble(model, z0, z1, t, weights, order)
+                    else:
+                        energy = fr_energy(model, z0, z1, t, weights, order)
+                    energy.backward()
+                    return energy
+                
+                optimizer = LBFGS([weights], lr= 0.6, line_search_fn='strong_wolfe')
+                for _ in range(4): 
+                    optimizer.step(closure)
+
+                proximity_matrix[k, n_decoder] = proximity(curve, latents)
+            
+        # mean over colmmns
+        mean_proximity = proximity_matrix.mean(dim=0)
+        fig, ax = plt.subplots()
+        #pdb.set_trace()
+        ax.plot(range(1, n_decoder+2), mean_proximity)
+        ax.set_xlabel("Number of ensemble members")
+        ax.set_ylabel("Mean proximity")
+        fig.tight_layout()
+        plt.savefig(dir_name+'proximity.png')
+

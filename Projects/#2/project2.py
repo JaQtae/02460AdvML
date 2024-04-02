@@ -88,6 +88,7 @@ class BernoulliDecoder(nn.Module):
            A tensor of dimension `(batch_size, M)`, where M is the dimension of the latent space.
         """
         logits = self.decoder_net(z)
+        # TODO: Possibly change to Bernoulli purely cause of negative KL divergences in energy computation
         return td.Independent(td.ContinuousBernoulli(logits=logits), 3)
 
 
@@ -130,7 +131,7 @@ class VAE(nn.Module):
         z = q.rsample()
         
         if self.num_decoders > 1:
-            chance = torch.randint(0, self.num_decoders-1, 1) # Choose random number to sample a decoder from all decoders
+            chance = torch.randint(0, self.num_decoders-1, (1,)) # Choose random number to sample a decoder from all decoders
             d = self.decoders[chance]
             elbo = torch.mean(d(z).log_prob(x) - td.kl_divergence(q, self.prior()), dim=0)
         else:
@@ -220,13 +221,10 @@ def proximity(curve_points, latent):
     pd_min_max = pd_min.max()
     return pd_min_max
 
-### TODO: Geodesic function ( this is basicly straight lines or third-order polynomials? )
 import torch
 import torch.distributions as td
 
 def create_curve(c0, c1, N = 25, order = 1):
-    # create line between c0 and c1
-    # Rembember that c0 and c1 both are fixed points
     t = torch.linspace(0, 1, N-1)
     curve = (1 - t[:, None]) * c0 + t[:, None] * c1
     if order >= 2:
@@ -247,12 +245,11 @@ def update_curve(c0, c1, t, weights, order):
     curve = (1 - t[:, None]) * c0 + t[:, None] * c1
     for i in range(2, order + 1):
         weights_update[0, :, :] = 0
-        weights_update[-1, :, :] = 0 #-torch.sum(weights_update[: -1, :], dim=0)
+        weights_update[-1, :, :] = 0 # -torch.sum(weights_update[: -1, :], dim=0)
         curve += weights_update[:, :, i - 2] * t[:, None]**i
     return curve
 
-def fr_energy(
-    model, c0, c1, t, weights, order):
+def fr_energy(model, c0, c1, t, weights, order):
     """ Fisher-Rao metric """
     curve = update_curve(c0, c1, t, weights, order)
     energy = torch.tensor([0.])
@@ -263,14 +260,14 @@ def fr_energy(
         energy += td.kl.kl_divergence(model.decoder(z0), model.decoder(z1))
     return energy
 
-def fr_energy_ensemble(
-    model, c0, c1, t, weights, order):
+def fr_energy_ensemble(model, c0, c1, t, weights, order):
     """ Model-average Fisher-Rao curve energy/metric """
     import random
     curve = update_curve(c0, c1, t, weights, order)
     energy = torch.tensor([0.])
     num_points = curve.size(0)
     
+    #decoders = model.decoders
     # TODO: Permuting the initial decoders, draw them uniformly (Monte Carlo?):
     decoders_list = list(model.decoders)
     random.shuffle(decoders_list)
@@ -278,17 +275,22 @@ def fr_energy_ensemble(
     random.shuffle(decoders_list)
     permuted_decoders2 = nn.ModuleList(decoders_list)
     
+    #print(f"permuted decoders: {}")
+    
+    
     for i in range(num_points - 1):
         z0 = curve[i]
         z1 = curve[i + 1]
+        
         # TODO: Need to do some smart stuff that takes a random decoder, gives it a point and yada yada to mimmick MC
+        # would require to use num_points as a batch dim kinda thing to do 10 calls instead of 100
         for k in range(len(permuted_decoders2)):
             s = permuted_decoders1[k](z0)
             ss = permuted_decoders2[k](z1)
-            
-        decoder_energies = td.kl.kl_divergence(s, ss) 
+        #for d in decoders:
+        energy += td.kl.kl_divergence(s, ss) / model.num_decoders # Take average over ensemble
         
-        energy += decoder_energies  / len(model.num_decoders) # Take average over ensemble
+        #energy += decoder_energies  / len(model.num_decoders) # Take average over ensemble
         
     return energy
 
@@ -362,7 +364,7 @@ if __name__ == "__main__":
     # Define VAE model
     encoder = GaussianEncoder(encoder_net)
     decoder = BernoulliDecoder(new_decoder())
-    model = VAE(prior, decoder, encoder, num_decoders=10).to(device)
+    model = VAE(prior, decoder, encoder, num_decoders=1).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     
     # Choose mode to run
@@ -398,7 +400,7 @@ if __name__ == "__main__":
             ax.scatter(latents[idx, 0], latents[idx, 1])
             
         ## Plot random geodesics
-        num_curves = 10
+        num_curves = 50
         curve_indices = torch.randint(num_train_data, (num_curves, 2))  # (num_curves) x 2
         for k in range(num_curves):
             i = curve_indices[k, 0]
@@ -407,17 +409,17 @@ if __name__ == "__main__":
             z1 = latents[j]
 
             order = 4
-            N = 30
+            N = 40
             curve, t, weights = create_curve(z0, z1, N = N, order = order) # 2 x num_points [[c0_x, c0_y], [c1_x, c1_y], ..., [cN_x, cN_y]]
             weights.requires_grad = True
-            print(f"points along z0->z1 given curve c:{curve}") 
-            print(f"init params:{weights}") 
+            #print(f"points along z0->z1 given curve c:{curve}") 
+            #print(f"init params:{weights}") 
             
             # TODO: Minimize energy of each curve.
             def closure():
                 optimizer.zero_grad()
-                energy = fr_energy(model,
-                                   z0, z1, t, weights, order)
+                #energy = fr_energy(model, z0, z1, t, weights, order)
+                energy = fr_energy_ensemble(model, z0, z1, t, weights, order)
                 #energy.requires_grad = True
                 print(f"Energy: {energy}")
                 energy.backward()
@@ -431,6 +433,12 @@ if __name__ == "__main__":
             ax.scatter(z0[0], z0[1], c='r')
             ax.scatter(z1[0], z1[1], c='r')
             ax.plot(curve[:, 0], curve[:, 1], 'r')
-            print(f"init params:{weights}") 
+            # import random
+            # import matplotlib as mpl
+            # unique_colors = list(mpl.colors.CSS4_COLORS.keys())  # List of available colors
+            # random.shuffle(unique_colors)
+            # selected_colors = unique_colors[:50]
+            # for i in range(len(curve)):
+            #     ax.plot(curve[i, 0], curve[i, 1], color=selected_colors[i])
         
         plt.savefig(dir_name+args.plot)

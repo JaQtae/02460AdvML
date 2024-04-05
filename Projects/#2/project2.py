@@ -421,8 +421,6 @@ if __name__ == "__main__":
             order = 3
             N = 30
             curve, t, weights = create_curve(z0, z1, N = N, order = order) # 2 x num_points [[c0_x, c0_y], [c1_x, c1_y], ..., [cN_x, cN_y]]
-            #t = t[1:-1]
-            #weights = weights[1:-1, :, :]
             weights.requires_grad = True
             #print(f"points along z0->z1 given curve c:{curve}") 
             #print(f"init params:{weights}") 
@@ -468,26 +466,7 @@ if __name__ == "__main__":
         p /= N
         G_x = 1 / (p + epsilon)
         ax.imshow(G_x.cpu(), extent=(-limit, limit, -limit, limit), origin='lower', cmap = 'PuBu')
-        #pdb.set_trace()
-        # entropy = model.prior(MB).entropy()
-        # entropy = 1 / (entropy + epsilon)
-        # entropy = entropy.view(res, res)
-        # ax.imshow(entropy.detach().numpy(), extent=(-limit, limit, -limit, limit), origin='lower', alpha=0.5)
-        #plt.show()
 
-        #pdb.set_trace()
-        #ax.imshow(entropy.detach().numpy(), extent=(-limit, limit, -limit, limit), origin='lower', alpha=0.5)
-
-        #px = model.prior().log_prob(MB).exp().view(res, res)
-        #x = model.prior().sample(torch.Size([MB.size(0)]))
-        # model.decoder(model.prior().sample()).entropy() 
-        #ax.imshow(p, extent=(-limit, limit, -limit, limit), origin='lower', alpha=0.5)
-
-        #epsilon = 1e-6
-        #G_x = 1 / (p + epsilon)
-        #G_x = G_x / G_x.sum()
-
-        #ax.imshow(G_x, extent=(-limit, limit, -limit, limit), origin='lower', alpha=0.5)
         fig.tight_layout()
         
         plt.savefig(dir_name+args.plot)

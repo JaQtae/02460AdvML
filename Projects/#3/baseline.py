@@ -40,31 +40,91 @@ class Erdos_renyi():
                         (self.node_counts[i]-1)) for i in range(len(self.node_counts))]).to(self.device)
 
     def generate_graph(self):
-        N = torch.randint(low = self.node_counts.min(), high = self.node_counts.max(), size = (1,)).to(self.device)
+        idx_N = torch.randint(low = self.node_counts.min(), high = self.node_counts.max(), size = (1,)).to(self.device)
+        N = self.node_counts[idx_N].item()
         # random sample a element from densities
-        idx = torch.randint(low = 0, high = len(self.densities), size = (1,)).to(self.device)
-        r = self.densities[idx].to(self.device)
-
-        return torch.rand(N, N, device = self.device) < r
+        idx_r = torch.randint(low = 0, high = len(self.densities), size = (1,)).to(self.device)
+        r = self.densities[idx_r].item()
+        A = torch.rand(N, N, device = self.device) < r
+        G = nx.from_numpy_array(A.cpu().numpy())
+        return G
     
     def novel_and_unique(self, N: int = 1000):
         hashes_baseline = []
         hashes_train = []
 
         # Generate and hash graphs
+        node_degree_gen = {i: 0 for i in range(self.node_counts.max() + 1)}
+        clustering_gen = {i: 0 for i in range(self.node_counts.max() + 1)}
+        eigenvector_gen = {i: 0 for i in range(self.node_counts.max() + 1)}
         for i in tqdm(range(N), desc = "Generating and hashing graphs"):
-            A = self.generate_graph()
-            G = nx.from_numpy_array(A.cpu().numpy())
+            G = self.generate_graph()
             hashes_baseline.append(nx.weisfeiler_lehman_graph_hash(G))
 
+            # node degree
+            node_degree = dict(G.degree())
+            for key in node_degree.keys():
+                node_degree_gen[key] += node_degree[key]
+
+            # Cluster coefficient
+            clustering = nx.clustering(G)
+            for key in clustering.keys():
+                clustering_gen[key] += clustering[key]
+
+            # Eigenvector centrality
+            eigenvector = nx.eigenvector_centrality(G)
+            for key in eigenvector.keys():
+                eigenvector_gen[key] += eigenvector[key]
+
         # hash training graphs
+        node_degree_train = {i: 0 for i in range(self.node_counts.max() + 1)}
+        clustering_train = {i: 0 for i in range(self.node_counts.max() + 1)}
+        eigenvector_train = {i: 0 for i in range(self.node_counts.max() + 1)}
         for data in tqdm(self.data, desc = "Hashing training graphs"):
             edge_list = data.edge_index.cpu().numpy()
             edges = list(map(tuple, edge_list.T))
             G = nx.Graph()
             G.add_edges_from(edges)
             hashes_train.append(nx.weisfeiler_lehman_graph_hash(G))
-        
+
+            # node degree
+            node_degree = dict(G.degree())
+            for key in node_degree.keys():
+                node_degree_train[key] += node_degree[key]
+
+            # Cluster coefficient
+            clustering = nx.clustering(G)
+            for key in clustering.keys():
+                clustering_train[key] += clustering[key]
+            
+            # Eigenvector centrality
+            eigenvector = nx.eigenvector_centrality(G, max_iter = 1000)
+            for key in eigenvector.keys():
+                eigenvector_train[key] += eigenvector[key]
+
+        # Normalize with the respective number of graphs
+        node_degree_gen = {key: value/N for key, value in node_degree_gen.items()}
+        clustering_gen = {key: value/N for key, value in clustering_gen.items()}
+        eigenvector_gen = {key: value/N for key, value in eigenvector_gen.items()}
+        node_degree_train = {key: value/len(self.data) for key, value in node_degree_train.items()}
+        clustering_train = {key: value/len(self.data) for key, value in clustering_train.items()}
+        eigenvector_train = {key: value/len(self.data) for key, value in eigenvector_train.items()}
+
+        # plot histograms
+        fig, axs = plt.subplots(3, 2, figsize = (15, 15))
+        axs[0, 0].bar(node_degree_gen.keys(), node_degree_gen.values())
+        axs[0, 0].set_title("Node degree distribution of generated graphs")
+        axs[0, 1].bar(node_degree_train.keys(), node_degree_train.values())
+        axs[0, 1].set_title("Node degree distribution of training graphs")
+        axs[1, 0].bar(clustering_gen.keys(), clustering_gen.values())
+        axs[1, 0].set_title("Clustering coefficient distribution of generated graphs")
+        axs[1, 1].bar(clustering_train.keys(), clustering_train.values())
+        axs[1, 1].set_title("Clustering coefficient distribution of training graphs")
+        axs[2, 0].bar(eigenvector_gen.keys(), eigenvector_gen.values())
+        axs[2, 0].set_title("Eigenvector centrality distribution of generated graphs")
+        axs[2, 1].bar(eigenvector_train.keys(), eigenvector_train.values())
+        axs[2, 1].set_title("Eigenvector centrality distribution of training graphs")
+        plt.show()
 
         hashes_baseline = np.array(hashes_baseline)
         hashes_train = np.array(hashes_train)
@@ -74,8 +134,7 @@ class Erdos_renyi():
 if __name__ == '__main__':
     # Generate a graph
     er = Erdos_renyi(train_dataset)
-    A = er.generate_graph().cpu().numpy()
-    G = nx.from_numpy_array(A)
+    G = er.generate_graph()
 
     er.novel_and_unique()
 

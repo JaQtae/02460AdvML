@@ -126,6 +126,17 @@ class Erdos_renyi():
         axs[2, 1].set_title("Eigenvector centrality distribution of training graphs")
         plt.show()
 
+        # Maximum disgreement between generated and training graphs
+        # Half the L1 norm
+        
+        node_degree_diff = {key: abs(node_degree_gen[key] - node_degree_train[key]) for key in node_degree_gen.keys()} 
+        clustering_diff = {key: abs(clustering_gen[key] - clustering_train[key]) for key in clustering_gen.keys()} 
+        eigenvector_diff = {key: abs(eigenvector_gen[key] - eigenvector_train[key]) for key in eigenvector_gen.keys()} 
+        print(f"Maximum disagreement in node degree: {max(node_degree_diff.values()) / 2}")
+        print(f"Maximum disagreement in clustering coefficient: {max(clustering_diff.values()) / 2}")
+        print(f"Maximum disagreement in eigenvector centrality: {max(eigenvector_diff.values()) / 2}")
+
+
         hashes_baseline = np.array(hashes_baseline)
         hashes_train = np.array(hashes_train)
         # TODO: strange we see such a high number of unique graphs

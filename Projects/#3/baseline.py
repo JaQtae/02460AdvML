@@ -48,6 +48,8 @@ class Erdos_renyi():
         idx_r = torch.randint(low = 0, high = len(self.densities), size = (1,)).to(self.device)
         r = self.densities[idx_r].item()
         A = torch.rand(N, N, device = self.device) < r
+        A = torch.triu(A, diagonal = 1) # ensure no self-loops
+        A = A + A.t() # create undirected graph
         G = nx.from_numpy_array(A.cpu().numpy())
         return G
     

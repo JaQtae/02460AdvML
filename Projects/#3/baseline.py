@@ -7,6 +7,8 @@ import torch.nn as nn
 import networkx as nx
 from tqdm import tqdm
 import numpy as np
+import seaborn as sns
+sns.set_style("darkgrid", {"grid.color": ".6", "grid.linestyle": ":"})
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -54,32 +56,29 @@ class Erdos_renyi():
         hashes_train = []
 
         # Generate and hash graphs
-        node_degree_gen = {i: 0 for i in range(self.node_counts.max() + 1)}
-        clustering_gen = {i: 0 for i in range(self.node_counts.max() + 1)}
-        eigenvector_gen = {i: 0 for i in range(self.node_counts.max() + 1)}
+        node_degree_gen = []
+        clustering_gen = []
+        eigenvector_gen = []
         for i in tqdm(range(N), desc = "Generating and hashing graphs"):
             G = self.generate_graph()
             hashes_baseline.append(nx.weisfeiler_lehman_graph_hash(G))
 
             # node degree
             node_degree = dict(G.degree())
-            for key in node_degree.keys():
-                node_degree_gen[key] += node_degree[key]
+            node_degree_gen += list(node_degree.values())
 
             # Cluster coefficient
             clustering = nx.clustering(G)
-            for key in clustering.keys():
-                clustering_gen[key] += clustering[key]
+            clustering_gen += list(clustering.values())
 
             # Eigenvector centrality
-            eigenvector = nx.eigenvector_centrality(G)
-            for key in eigenvector.keys():
-                eigenvector_gen[key] += eigenvector[key]
+            eigenvector = nx.eigenvector_centrality(G, max_iter = 1000)
+            eigenvector_gen += list(eigenvector.values())
 
         # hash training graphs
-        node_degree_train = {i: 0 for i in range(self.node_counts.max() + 1)}
-        clustering_train = {i: 0 for i in range(self.node_counts.max() + 1)}
-        eigenvector_train = {i: 0 for i in range(self.node_counts.max() + 1)}
+        node_degree_train = []
+        clustering_train = []
+        eigenvector_train = []
         for data in tqdm(self.data, desc = "Hashing training graphs"):
             edge_list = data.edge_index.cpu().numpy()
             edges = list(map(tuple, edge_list.T))
@@ -89,52 +88,68 @@ class Erdos_renyi():
 
             # node degree
             node_degree = dict(G.degree())
-            for key in node_degree.keys():
-                node_degree_train[key] += node_degree[key]
-
+            node_degree_train += list(node_degree.values())
             # Cluster coefficient
             clustering = nx.clustering(G)
-            for key in clustering.keys():
-                clustering_train[key] += clustering[key]
+            clustering_train += list(clustering.values())
             
             # Eigenvector centrality
             eigenvector = nx.eigenvector_centrality(G, max_iter = 1000)
-            for key in eigenvector.keys():
-                eigenvector_train[key] += eigenvector[key]
+            eigenvector_train += list(eigenvector.values())	
 
-        # Normalize with the respective number of graphs
-        node_degree_gen = {key: value/N for key, value in node_degree_gen.items()}
-        clustering_gen = {key: value/N for key, value in clustering_gen.items()}
-        eigenvector_gen = {key: value/N for key, value in eigenvector_gen.items()}
-        node_degree_train = {key: value/len(self.data) for key, value in node_degree_train.items()}
-        clustering_train = {key: value/len(self.data) for key, value in clustering_train.items()}
-        eigenvector_train = {key: value/len(self.data) for key, value in eigenvector_train.items()}
+        # Node degree histogram
+        min_bin = min(min(node_degree_gen), min(node_degree_train))
+        max_bin = max(max(node_degree_gen), max(node_degree_train))
+        n_bins = 20
+        bin_width = (max_bin - min_bin) / n_bins
+        bins = np.arange(min_bin, max_bin + bin_width, bin_width)
+        plt.figure(figsize=(10, 6))
+        sns.histplot(node_degree_gen, color="blue", label='Generated', kde=False, alpha=0.5, bins = bins, stat = "probability")
+        sns.histplot(node_degree_train, color="red", label='Training', kde=False, alpha=0.5, bins = bins, stat = "probability")
+        plt.xlabel('Node Degree')
+        plt.ylabel('Probability')
+        plt.title("Node degree distribution")
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig("node_degree_distribution.png")
 
-        # plot histograms
-        fig, axs = plt.subplots(3, 2, figsize = (15, 15))
-        axs[0, 0].bar(node_degree_gen.keys(), node_degree_gen.values())
-        axs[0, 0].set_title("Node degree distribution of generated graphs")
-        axs[0, 1].bar(node_degree_train.keys(), node_degree_train.values())
-        axs[0, 1].set_title("Node degree distribution of training graphs")
-        axs[1, 0].bar(clustering_gen.keys(), clustering_gen.values())
-        axs[1, 0].set_title("Clustering coefficient distribution of generated graphs")
-        axs[1, 1].bar(clustering_train.keys(), clustering_train.values())
-        axs[1, 1].set_title("Clustering coefficient distribution of training graphs")
-        axs[2, 0].bar(eigenvector_gen.keys(), eigenvector_gen.values())
-        axs[2, 0].set_title("Eigenvector centrality distribution of generated graphs")
-        axs[2, 1].bar(eigenvector_train.keys(), eigenvector_train.values())
-        axs[2, 1].set_title("Eigenvector centrality distribution of training graphs")
-        plt.show()
+        # Clustering histogram
+        min_bin = min(min(clustering_gen), min(clustering_train))
+        max_bin = max(max(clustering_gen), max(clustering_train))
+        n_bins = 20
+        bin_width = (max_bin - min_bin) / n_bins
+        bins = np.arange(min_bin, max_bin + bin_width, bin_width)
+        plt.figure(figsize=(10, 6))
+        # Plot the histogram for 'node_degree_gen'
+        sns.histplot(clustering_gen, color="blue", label='Generated', kde=False, alpha=0.5, bins = bins, stat = "probability")
+        sns.histplot(clustering_train, color="red", label='Training', kde=False, alpha=0.5, bins = bins, stat = "probability")
+        plt.xlabel('Clustering coefficient')
+        plt.ylabel('Probability')
+        plt.title("Clustering coefficient distribution")
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig("clustering_coefficients.png")
+
+        # Eigenvector centrality histogram
+        min_bin = min(min(eigenvector_gen), min(eigenvector_train))
+        max_bin = max(max(eigenvector_gen), max(eigenvector_train))
+        n_bins = 20
+        bin_width = (max_bin - min_bin) / n_bins
+        bins = np.arange(min_bin, max_bin + bin_width, bin_width)
+        plt.figure(figsize=(10, 6))
+        # Plot the histogram for 'node_degree_gen'
+        sns.histplot(eigenvector_gen, color="blue", label='Generated', kde=False, alpha=0.5, bins = bins, stat = "probability")
+        sns.histplot(eigenvector_train, color="red", label='Training', kde=False, alpha=0.5, bins = bins, stat = "probability")
+        plt.xlabel('Eigenvector centrality')
+        plt.ylabel('Probability')
+        plt.title("Eigenvector centrality distribution")
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig("eigenvector_centrality.png")
 
         # Maximum disgreement between generated and training graphs
         # Half the L1 norm
-        
-        node_degree_diff = {key: abs(node_degree_gen[key] - node_degree_train[key]) for key in node_degree_gen.keys()} 
-        clustering_diff = {key: abs(clustering_gen[key] - clustering_train[key]) for key in clustering_gen.keys()} 
-        eigenvector_diff = {key: abs(eigenvector_gen[key] - eigenvector_train[key]) for key in eigenvector_gen.keys()} 
-        print(f"Maximum disagreement in node degree: {max(node_degree_diff.values()) / 2}")
-        print(f"Maximum disagreement in clustering coefficient: {max(clustering_diff.values()) / 2}")
-        print(f"Maximum disagreement in eigenvector centrality: {max(eigenvector_diff.values()) / 2}")
+        # TODO
 
 
         hashes_baseline = np.array(hashes_baseline)

@@ -175,10 +175,8 @@ ax.set_ylabel('Loss')
 ax.set_title('Loss over training')
 plt.show()
 
-n_samples = 10
 
-
-def generate_z(min_nodes, max_nodes, n_samples):
+def generate_z(min_nodes=10, max_nodes=28, n_samples=1000):
     """Generates the z from a standard normal (prior) distribution with a given number of nodes,
     which follows a random distribution between the min and max of the MUTAG dataset.
     TODO: Swap this to the empirical distribution of MUTAG"""
@@ -208,5 +206,18 @@ def generate_graph_from_z(z_list, threshold = 0.5):
     return A_hats, graphs
 
 
+zs = generate_z()
+adjs, graphs = generate_graph_from_z(zs)
 
+
+n_graphs_plot = 5
+
+fig, axes = plt.subplots(1, n_graphs_plot, figsize=(15, 3))
+
+for i in range(n_graphs_plot):
+    ax = axes[i]
+    nx.draw(graphs[i], ax=ax)
+    ax.set_title(f'Graph {i+1}')
+plt.tight_layout()
+plt.show()
 

@@ -18,12 +18,12 @@ node_feature_dim = 7
 
 # Split into training and validation
 rng = torch.Generator().manual_seed(0)
-train_dataset, validation_dataset, test_dataset = random_split(dataset, (100, 44, 44), generator = rng)
+train_dataset, validation_dataset, test_dataset = random_split(dataset, (144, 0, 44), generator = rng)
 
 # Create dataloader for training and validation
-train_loader = DataLoader(train_dataset, batch_size = 100)
-validation_loader = DataLoader(validation_dataset, batch_size = 44)
-test_loader = DataLoader(test_dataset, batch_size = 44)
+train_loader = DataLoader(train_dataset, batch_size = 1)
+#validation_loader = DataLoader(validation_dataset, batch_size = 44)
+test_loader = DataLoader(test_dataset, batch_size = 1)
 
 class Erdos_renyi():
     def __init__(self, dataset: TUDataset):
@@ -42,7 +42,7 @@ class Erdos_renyi():
                         (self.node_counts[i]-1)) for i in range(len(self.node_counts))]).to(self.device)
 
     def generate_graph(self):
-        idx_N = torch.randint(low = self.node_counts.min(), high = self.node_counts.max(), size = (1,)).to(self.device)
+        idx_N = torch.randint(low = 0, high = len(self.densities), size = (1,)).to(self.device)
         N = self.node_counts[idx_N].item()
         # random sample a element from densities
         idx_r = torch.randint(low = 0, high = len(self.densities), size = (1,)).to(self.device)
@@ -53,7 +53,7 @@ class Erdos_renyi():
         G = nx.from_numpy_array(A.cpu().numpy())
         return G
     
-    def novel_and_unique(self, N: int = 1000):
+    def novel_and_unique(self, N: int = 1000, plotting: bool = False):
         hashes_baseline = []
         hashes_train = []
 
@@ -81,12 +81,14 @@ class Erdos_renyi():
         node_degree_train = []
         clustering_train = []
         eigenvector_train = []
+        i = 0
         for data in tqdm(self.data, desc = "Hashing training graphs"):
             edge_list = data.edge_index.cpu().numpy()
             edges = list(map(tuple, edge_list.T))
             G = nx.Graph()
             G.add_edges_from(edges)
             hashes_train.append(nx.weisfeiler_lehman_graph_hash(G))
+            i += 1
 
             # node degree
             node_degree = dict(G.degree())
@@ -99,55 +101,56 @@ class Erdos_renyi():
             eigenvector = nx.eigenvector_centrality(G, max_iter = 1000)
             eigenvector_train += list(eigenvector.values())	
 
-        # Node degree histogram
-        min_bin = min(min(node_degree_gen), min(node_degree_train))
-        max_bin = max(max(node_degree_gen), max(node_degree_train))
-        n_bins = 20
-        bin_width = (max_bin - min_bin) / n_bins
-        bins = np.arange(min_bin, max_bin + bin_width, bin_width)
-        plt.figure(figsize=(10, 6))
-        sns.histplot(node_degree_gen, color="blue", label='Generated', kde=False, alpha=0.5, bins = bins, stat = "probability")
-        sns.histplot(node_degree_train, color="red", label='Training', kde=False, alpha=0.5, bins = bins, stat = "probability")
-        plt.xlabel('Node Degree')
-        plt.ylabel('Probability')
-        plt.title("Node degree distribution")
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig("node_degree_distribution.png")
+        if plotting:
+            # Node degree histogram
+            min_bin = min(min(node_degree_gen), min(node_degree_train))
+            max_bin = max(max(node_degree_gen), max(node_degree_train))
+            n_bins = 20
+            bin_width = (max_bin - min_bin) / n_bins
+            bins = np.arange(min_bin, max_bin + bin_width, bin_width)
+            #plt.figure(figsize=(10, 6))
+            sns.histplot(node_degree_gen, color="blue", label='Generated', kde=False, alpha=0.5, bins = bins, stat = "probability")
+            sns.histplot(node_degree_train, color="red", label='Training', kde=False, alpha=0.5, bins = bins, stat = "probability")
+            plt.xlabel('Node Degree', fontsize=16)
+            plt.ylabel('Probability', fontsize=16)
+            plt.title("Node degree distribution", fontsize=18)
+            plt.legend()
+            plt.tight_layout()
+            plt.savefig("node_degree_distribution.png")
 
-        # Clustering histogram
-        min_bin = min(min(clustering_gen), min(clustering_train))
-        max_bin = max(max(clustering_gen), max(clustering_train))
-        n_bins = 20
-        bin_width = (max_bin - min_bin) / n_bins
-        bins = np.arange(min_bin, max_bin + bin_width, bin_width)
-        plt.figure(figsize=(10, 6))
-        # Plot the histogram for 'node_degree_gen'
-        sns.histplot(clustering_gen, color="blue", label='Generated', kde=False, alpha=0.5, bins = bins, stat = "probability")
-        sns.histplot(clustering_train, color="red", label='Training', kde=False, alpha=0.5, bins = bins, stat = "probability")
-        plt.xlabel('Clustering coefficient')
-        plt.ylabel('Probability')
-        plt.title("Clustering coefficient distribution")
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig("clustering_coefficients.png")
+            # Clustering histogram
+            min_bin = min(min(clustering_gen), min(clustering_train))
+            max_bin = max(max(clustering_gen), max(clustering_train))
+            n_bins = 20
+            bin_width = (max_bin - min_bin) / n_bins
+            bins = np.arange(min_bin, max_bin + bin_width, bin_width)
+            #plt.figure(figsize=(10, 6))
+            # Plot the histogram for 'node_degree_gen'
+            sns.histplot(clustering_gen, color="blue", label='Generated', kde=False, alpha=0.5, bins = bins, stat = "probability")
+            sns.histplot(clustering_train, color="red", label='Training', kde=False, alpha=0.5, bins = bins, stat = "probability")
+            plt.xlabel('Clustering coefficient', fontsize=16)
+            plt.ylabel('Probability', fontsize=16)
+            plt.title("Clustering coefficient distribution", fontsize=18)
+            plt.legend()
+            plt.tight_layout()
+            plt.savefig("clustering_coefficients.png")
 
-        # Eigenvector centrality histogram
-        min_bin = min(min(eigenvector_gen), min(eigenvector_train))
-        max_bin = max(max(eigenvector_gen), max(eigenvector_train))
-        n_bins = 20
-        bin_width = (max_bin - min_bin) / n_bins
-        bins = np.arange(min_bin, max_bin + bin_width, bin_width)
-        plt.figure(figsize=(10, 6))
-        # Plot the histogram for 'node_degree_gen'
-        sns.histplot(eigenvector_gen, color="blue", label='Generated', kde=False, alpha=0.5, bins = bins, stat = "probability")
-        sns.histplot(eigenvector_train, color="red", label='Training', kde=False, alpha=0.5, bins = bins, stat = "probability")
-        plt.xlabel('Eigenvector centrality')
-        plt.ylabel('Probability')
-        plt.title("Eigenvector centrality distribution")
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig("eigenvector_centrality.png")
+            # Eigenvector centrality histogram
+            min_bin = min(min(eigenvector_gen), min(eigenvector_train))
+            max_bin = max(max(eigenvector_gen), max(eigenvector_train))
+            n_bins = 20
+            bin_width = (max_bin - min_bin) / n_bins
+            bins = np.arange(min_bin, max_bin + bin_width, bin_width)
+            #plt.figure(figsize=(10, 6))
+            # Plot the histogram for 'node_degree_gen'
+            sns.histplot(eigenvector_gen, color="blue", label='Generated', kde=False, alpha=0.5, bins = bins, stat = "probability")
+            sns.histplot(eigenvector_train, color="red", label='Training', kde=False, alpha=0.5, bins = bins, stat = "probability")
+            plt.xlabel('Eigenvector centrality', fontsize=16)
+            plt.ylabel('Probability', fontsize=16)
+            plt.title("Eigenvector centrality distribution", fontsize=18)
+            plt.legend()
+            plt.tight_layout()
+            plt.savefig("eigenvector_centrality.png")
 
         # Maximum disgreement between generated and training graphs
         # Half the L1 norm
@@ -159,12 +162,14 @@ class Erdos_renyi():
         # TODO: strange we see such a high number of unique graphs
         # Follow up on this!
 
+        return node_degree_gen, node_degree_train, clustering_gen, clustering_train, eigenvector_gen, eigenvector_train, hashes_baseline, hashes_train
+
 if __name__ == '__main__':
     # Generate a graph
     er = Erdos_renyi(train_dataset)
     G = er.generate_graph()
 
-    er.novel_and_unique()
+    er.novel_and_unique(plotting=True)
 
     nx.draw_spring(G)
     plt.show()

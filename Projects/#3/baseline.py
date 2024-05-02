@@ -53,7 +53,7 @@ class Erdos_renyi():
         G = nx.from_numpy_array(A.cpu().numpy())
         return G
     
-    def novel_and_unique(self, N: int = 1000, plotting: bool = False):
+    def novel_and_unique(self, N: int = 1000, plotting: bool = False, n_save: int = 10):
         hashes_baseline = []
         hashes_train = []
 
@@ -61,8 +61,15 @@ class Erdos_renyi():
         node_degree_gen = []
         clustering_gen = []
         eigenvector_gen = []
+        i = 0
         for i in tqdm(range(N), desc = "Generating and hashing graphs"):
             G = self.generate_graph()
+            if i <= n_save:
+                nx.draw_spring(G)
+                plt.savefig(f"baseline_graph_{i}.png")
+                plt.close()
+            i += 1
+
             hashes_baseline.append(nx.weisfeiler_lehman_graph_hash(G))
 
             # node degree
@@ -87,8 +94,13 @@ class Erdos_renyi():
             edges = list(map(tuple, edge_list.T))
             G = nx.Graph()
             G.add_edges_from(edges)
-            hashes_train.append(nx.weisfeiler_lehman_graph_hash(G))
+            if i <= n_save:
+                nx.draw_spring(G)
+                plt.savefig(f"training_graph_{i}.png")
+                plt.close()
             i += 1
+
+            hashes_train.append(nx.weisfeiler_lehman_graph_hash(G))
 
             # node degree
             node_degree = dict(G.degree())
@@ -151,16 +163,6 @@ class Erdos_renyi():
             plt.legend()
             plt.tight_layout()
             plt.savefig("eigenvector_centrality.png")
-
-        # Maximum disgreement between generated and training graphs
-        # Half the L1 norm
-        # TODO
-
-
-        hashes_baseline = np.array(hashes_baseline)
-        hashes_train = np.array(hashes_train)
-        # TODO: strange we see such a high number of unique graphs
-        # Follow up on this!
 
         return node_degree_gen, node_degree_train, clustering_gen, clustering_train, eigenvector_gen, eigenvector_train, hashes_baseline, hashes_train
 

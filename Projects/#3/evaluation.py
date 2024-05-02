@@ -109,7 +109,15 @@ node_degree_vgae = []
 clustering_vgae = []
 eigenvector_vgae = []
 hashes_vgae = []
+
+n_save = 10
+i = 0
 for graph in graphs:
+    if i <= n_save:
+        nx.draw_spring(graph)
+        plt.savefig(f"vgae_graph_{i}.png")
+        plt.close()
+    i += 1
     hashes_vgae.append(nx.weisfeiler_lehman_graph_hash(graph))
     # Node degree
     node_degree = dict(graph.degree())
